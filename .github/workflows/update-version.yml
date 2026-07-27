@@ -22,6 +22,7 @@ jobs:
       - name: 获取 Release 信息
         id: release
         run: |
+          # 获取最新 Release 数据
           RELEASE_DATA=$(curl -s \
             -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             -H "Accept: application/vnd.github.v3+json" \
@@ -29,31 +30,50 @@ jobs:
           
           echo "Release 数据: $RELEASE_DATA"
           
+          # 提取版本号
           VERSION=$(echo "$RELEASE_DATA" | jq -r '.tag_name' | sed 's/^v//')
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
           
+          # 提取更新日志
           NOTES=$(echo "$RELEASE_DATA" | jq -r '.body' || echo "SuvikeDrive 更新")
           echo "NOTES<<EOF" >> $GITHUB_OUTPUT
           echo "$NOTES" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
           
+          # 提取发布日期
           DATE=$(echo "$RELEASE_DATA" | jq -r '.published_at' | cut -d'T' -f1 || date +%Y-%m-%d)
           echo "DATE=$DATE" >> $GITHUB_OUTPUT
           
-          DOWNLOAD_URL=$(echo "$RELEASE_DATA" | jq -r '.assets[0].browser_download_url')
-          echo "DOWNLOAD_URL=$DOWNLOAD_URL" >> $GITHUB_OUTPUT
+          # 提取资产信息 - 查找第一个 .dmg 文件
+          ASSET_URL=$(echo "$RELEASE_DATA" | jq -r '.assets[] | select(.name | endswith(".dmg")) | .browser_download_url' | head -1)
+          ASSET_SIZE=$(echo "$RELEASE_DATA" | jq -r '.assets[] | select(.name | endswith(".dmg")) | .size' | head -1)
           
-          SIZE=$(echo "$RELEASE_DATA" | jq -r '.assets[0].size')
-          echo "SIZE=$SIZE" >> $GITHUB_OUTPUT
+          if [ -z "$ASSET_URL" ] || [ "$ASSET_URL" = "null" ]; then
+            echo "错误：没有找到 .dmg 资产文件"
+            echo "可用的资产列表："
+            echo "$RELEASE_DATA" | jq '.assets[] | {name, browser_download_url}'
+            exit 1
+          fi
+          
+          echo "DOWNLOAD_URL=$ASSET_URL" >> $GITHUB_OUTPUT
+          echo "SIZE=$ASSET_SIZE" >> $GITHUB_OUTPUT
           
           echo "版本: $VERSION"
-          echo "下载地址: $DOWNLOAD_URL"
+          echo "下载地址: $ASSET_URL"
+          echo "文件大小: $ASSET_SIZE"
       
       - name: 下载并计算校验和
         id: checksum
         run: |
-          echo "下载 URL: ${{ steps.release.outputs.DOWNLOAD_URL }}"
-          curl -L -o app.dmg "${{ steps.release.outputs.DOWNLOAD_URL }}"
+          DOWNLOAD_URL="${{ steps.release.outputs.DOWNLOAD_URL }}"
+          echo "下载 URL: $DOWNLOAD_URL"
+          
+          if [ -z "$DOWNLOAD_URL" ] || [ "$DOWNLOAD_URL" = "null" ]; then
+            echo "错误：下载 URL 为空"
+            exit 1
+          fi
+          
+          curl -L -o app.dmg "$DOWNLOAD_URL"
           
           if [ ! -f app.dmg ]; then
             echo "错误：DMG 文件下载失败"
@@ -63,6 +83,9 @@ jobs:
           CHECKSUM=$(shasum -a 256 app.dmg | awk '{ print $1 }')
           echo "CHECKSUM=$CHECKSUM" >> $GITHUB_OUTPUT
           echo "校验和: $CHECKSUM"
+          
+          # 显示文件信息
+          ls -la app.dmg
           rm app.dmg
       
       - name: 更新 version.json
