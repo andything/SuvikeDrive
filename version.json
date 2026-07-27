@@ -2,10 +2,10 @@
     "version": "1.0.0",
     "build": "20260727",
     "downloadURL": "https://github.com/andything/SuvikeDrive/releases/download/v1.0.0/SuvikeDrive_v1.0.0.dmg",
-    "checksum": "待自动更新",
+    "checksum": "cbec4468c72782d10753128d88bf498a1670bc49c296d3b99a479ec073a28405",
     "checksumAlgorithm": "sha256",
-    "releaseNotes": "SuvikeDrive 初始版本",
-    "size": 0,
+    "releaseNotes": "## 🎉 首次发布\n\n### 新增功能\n- WebDAV 协议挂载支持\n- 开机自动挂载\n- 智能网络检测\n- 配置导入/导出\n- 自动更新系统\n- macOS 原生菜单栏体验",
+    "size": 3172473,
     "minOSVersion": "10.15",
     "isMandatory": false,
     "releaseDate": "2026-07-27"
