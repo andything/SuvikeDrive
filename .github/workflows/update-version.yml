@@ -9,16 +9,16 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-
+    
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-
+      
       - name: 安装 jq
-        run: sudo apt-get install -y jq
-
+        run: sudo apt-get update && sudo apt-get install -y jq curl
+      
       - name: 获取 Release 信息
         id: release
         run: |
@@ -27,34 +27,50 @@ jobs:
             -H "Accept: application/vnd.github.v3+json" \
             https://api.github.com/repos/${{ github.repository }}/releases/latest)
           
-          VERSION=$(echo "$RELEASE_DATA" | jq -r ".tag_name" | sed "s/^v//")
+          echo "Release 数据: $RELEASE_DATA"
+          
+          VERSION=$(echo "$RELEASE_DATA" | jq -r '.tag_name' | sed 's/^v//')
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
           
-          NOTES=$(echo "$RELEASE_DATA" | jq -r ".body")
+          NOTES=$(echo "$RELEASE_DATA" | jq -r '.body' || echo "SuvikeDrive 更新")
           echo "NOTES<<EOF" >> $GITHUB_OUTPUT
           echo "$NOTES" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
           
-          DATE=$(echo "$RELEASE_DATA" | jq -r ".published_at" | cut -d"T" -f1)
+          DATE=$(echo "$RELEASE_DATA" | jq -r '.published_at' | cut -d'T' -f1 || date +%Y-%m-%d)
           echo "DATE=$DATE" >> $GITHUB_OUTPUT
           
-          DOWNLOAD_URL=$(echo "$RELEASE_DATA" | jq -r ".assets[0].browser_download_url")
+          DOWNLOAD_URL=$(echo "$RELEASE_DATA" | jq -r '.assets[0].browser_download_url')
           echo "DOWNLOAD_URL=$DOWNLOAD_URL" >> $GITHUB_OUTPUT
           
-          SIZE=$(echo "$RELEASE_DATA" | jq -r ".assets[0].size")
+          SIZE=$(echo "$RELEASE_DATA" | jq -r '.assets[0].size')
           echo "SIZE=$SIZE" >> $GITHUB_OUTPUT
-
+          
+          echo "版本: $VERSION"
+          echo "下载地址: $DOWNLOAD_URL"
+      
       - name: 下载并计算校验和
         id: checksum
         run: |
+          echo "下载 URL: ${{ steps.release.outputs.DOWNLOAD_URL }}"
           curl -L -o app.dmg "${{ steps.release.outputs.DOWNLOAD_URL }}"
-          CHECKSUM=$(shasum -a 256 app.dmg | awk "{ print \$1 }")
+          
+          if [ ! -f app.dmg ]; then
+            echo "错误：DMG 文件下载失败"
+            exit 1
+          fi
+          
+          CHECKSUM=$(shasum -a 256 app.dmg | awk '{ print $1 }')
           echo "CHECKSUM=$CHECKSUM" >> $GITHUB_OUTPUT
+          echo "校验和: $CHECKSUM"
           rm app.dmg
-
+      
       - name: 更新 version.json
         run: |
-          BUILD=$(date +"%Y%m%d")
+          BUILD=$(date +'%Y%m%d')
+          echo "当前 version.json:"
+          cat version.json
+          
           jq --arg version "${{ steps.release.outputs.VERSION }}" \
              --arg build "$BUILD" \
              --arg url "${{ steps.release.outputs.DOWNLOAD_URL }}" \
@@ -62,18 +78,19 @@ jobs:
              --arg notes "${{ steps.release.outputs.NOTES }}" \
              --arg size "${{ steps.release.outputs.SIZE }}" \
              --arg date "${{ steps.release.outputs.DATE }}" \
-             ".version = \$version | " \
-              ".build = \$build | " \
-              ".downloadURL = \$url | " \
-              ".checksum = \$checksum | " \
-              ".releaseNotes = \$notes | " \
-              ".size = (\$size | tonumber) | " \
-              ".releaseDate = \$date" \
+             '.version = $version | 
+              .build = $build | 
+              .downloadURL = $url | 
+              .checksum = $checksum | 
+              .releaseNotes = $notes | 
+              .size = ($size | tonumber) | 
+              .releaseDate = $date' \
              version.json > version.json.tmp
           
           mv version.json.tmp version.json
+          echo "更新后的 version.json:"
           cat version.json
-
+      
       - name: 提交并推送
         run: |
           git config user.name "github-actions[bot]"
@@ -85,4 +102,5 @@ jobs:
             git add version.json
             git commit -m "🤖 自动更新版本信息到 v${{ steps.release.outputs.VERSION }}"
             git push
+            echo "✅ 已成功推送更新"
           fi
