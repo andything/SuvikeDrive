@@ -1,0 +1,53 @@
+# Xcode
+*.xcodeproj/
+*.xcworkspace/
+*.xcuserstate
+*.xcuserdata
+DerivedData/
+build/
+*.dSYM.zip
+*.dSYM
+*.xccheckout
+
+# Swift Package Manager
+.swiftpm/
+Packages/
+
+# CocoaPods
+Pods/
+Podfile.lock
+
+# Carthage
+Carthage/
+Carthage/Build/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Xcode Cloud
+.xcodecloud/
+
+# Localization
+*.stringsdict
+
+# IDE
+.idea/
+.vscode/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.log
+
+# Application
+*.app
+*.dmg
+*.pkg
+*.zip
+
+# User settings
+*.xcconfig.user
