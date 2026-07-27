@@ -6,7 +6,7 @@ on:
 
 jobs:
   update-version:
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
     permissions:
       contents: write
     
@@ -15,57 +15,89 @@ jobs:
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          fetch-depth: 0
+      
+      - name: 安装 GitHub CLI
+        run: |
+          type -p curl >/dev/null || sudo apt update && sudo apt install curl -y
+          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+          sudo apt update
+          sudo apt install gh -y
       
       - name: 获取 Release 信息
         id: release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # 获取最新 Release
-          RELEASE_URL="https://api.github.com/repos/${{ github.repository }}/releases/latest"
-          RELEASE_JSON=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" $RELEASE_URL)
+          # 获取最新 Release 的详细信息
+          RELEASE_JSON=$(gh release view --json tagName,name,body,assets,publishedAt 2>/dev/null)
+          
+          if [ -z "$RELEASE_JSON" ]; then
+            echo "错误: 无法获取 Release 信息"
+            exit 1
+          fi
+          
+          echo "$RELEASE_JSON"
           
           # 提取版本号
-          TAG_NAME=$(echo "$RELEASE_JSON" | grep -o '"tag_name":"[^"]*"' | cut -d'"' -f4)
-          VERSION=${TAG_NAME#v}
+          VERSION=$(echo "$RELEASE_JSON" | jq -r '.tagName' | sed 's/^v//')
           echo "VERSION=$VERSION" >> $GITHUB_ENV
-          echo "TAG=$TAG_NAME" >> $GITHUB_ENV
           
           # 提取更新日志
-          NOTES=$(echo "$RELEASE_JSON" | grep -o '"body":"[^"]*"' | cut -d'"' -f4 | sed 's/\\n/\
-/g')
+          NOTES=$(echo "$RELEASE_JSON" | jq -r '.body // "SuvikeDrive 更新"')
           echo "NOTES<<EOF" >> $GITHUB_ENV
           echo "$NOTES" >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
           
           # 提取发布日期
-          DATE=$(echo "$RELEASE_JSON" | grep -o '"published_at":"[^"]*"' | cut -d'"' -f4 | cut -d'T' -f1)
+          DATE=$(echo "$RELEASE_JSON" | jq -r '.publishedAt' | cut -d'T' -f1)
           echo "DATE=$DATE" >> $GITHUB_ENV
           
-          # 查找 DMG 下载链接
-          DMG_URL=$(echo "$RELEASE_JSON" | grep -o '"browser_download_url":"[^"]*\.dmg"' | head -1 | cut -d'"' -f4)
-          echo "DMG_URL=$DMG_URL" >> $GITHUB_ENV
+          # 查找 .dmg 文件
+          DMG_INFO=$(echo "$RELEASE_JSON" | jq -r '.assets[] | select(.name | endswith(".dmg")) | {url: .url, size: .size, name: .name}')
           
-          # 获取文件大小
-          DMG_SIZE=$(echo "$RELEASE_JSON" | grep -o '"size":[0-9]*' | head -1 | cut -d':' -f2)
+          if [ -z "$DMG_INFO" ] || [ "$DMG_INFO" = "null" ]; then
+            echo "错误: 没有找到 .dmg 资产文件"
+            echo "可用资产:"
+            echo "$RELEASE_JSON" | jq '.assets[] | .name'
+            exit 1
+          fi
+          
+          DMG_URL=$(echo "$DMG_INFO" | jq -r '.url')
+          DMG_SIZE=$(echo "$DMG_INFO" | jq -r '.size')
+          DMG_NAME=$(echo "$DMG_INFO" | jq -r '.name')
+          
+          echo "DMG_URL=$DMG_URL" >> $GITHUB_ENV
           echo "DMG_SIZE=$DMG_SIZE" >> $GITHUB_ENV
+          echo "DMG_NAME=$DMG_NAME" >> $GITHUB_ENV
           
           echo "版本: $VERSION"
-          echo "标签: $TAG_NAME"
+          echo "DMG 文件: $DMG_NAME"
           echo "下载地址: $DMG_URL"
           echo "文件大小: $DMG_SIZE"
       
       - name: 下载并计算校验和
         id: checksum
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if [ -z "$DMG_URL" ]; then
-            echo "错误: 没有找到 DMG 文件"
+          if [ -z "$DMG_URL" ] || [ "$DMG_URL" = "null" ]; then
+            echo "错误: DMG 下载地址为空"
             exit 1
           fi
           
           echo "正在下载: $DMG_URL"
-          curl -L -o app.dmg "$DMG_URL"
+          
+          # 使用 GitHub CLI 下载
+          gh release download "${{ env.VERSION }}" --pattern "*.dmg" --output app.dmg
+          
+          # 如果上面失败，尝试直接 curl
+          if [ ! -f app.dmg ]; then
+            echo "尝试使用 curl 下载..."
+            curl -L -o app.dmg -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+              -H "Accept: application/octet-stream" \
+              "$DMG_URL"
+          fi
           
           if [ ! -f app.dmg ]; then
             echo "错误: DMG 下载失败"
@@ -83,6 +115,9 @@ jobs:
       - name: 更新 version.json
         run: |
           BUILD=$(date +'%Y%m%d')
+          
+          echo "当前 version.json:"
+          cat version.json
           
           # 使用 Python 更新 JSON
           python3 << 'PYTHON_SCRIPT'
@@ -102,7 +137,7 @@ jobs:
           data['releaseNotes'] = os.environ.get('NOTES', 'SuvikeDrive 更新')
           data['size'] = int(os.environ.get('DMG_SIZE', '0'))
           data['minOSVersion'] = '10.15'
-          data['isMandatory'] = false
+          data['isMandatory'] = False
           data['releaseDate'] = os.environ.get('DATE', '2026-07-27')
           
           with open(version_file, 'w') as f:
@@ -111,6 +146,7 @@ jobs:
           print(f"✅ version.json 已更新到 {data['version']}")
           PYTHON_SCRIPT
           
+          echo ""
           echo "更新后的 version.json:"
           cat version.json
       
