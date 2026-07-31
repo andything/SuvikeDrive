@@ -1,12 +1,12 @@
 {
     "version": "1.0.1",
-    "build": "20260727",
+    "build": "20260801",
     "downloadURL": "https://github.com/andything/SuvikeDrive/releases/download/v1.0.1/SuvikeDrive_v1.0.1.dmg",
-    "checksum": "7b5cc923c469cf579615b1b2bae8ad839700c144bfd61fd0a9bd89db673dd5f2",
+    "checksum": "4ba577182f3feb4b29109af7ecce6f6852e058255836964a06502bdc6eb42fa1",
     "checksumAlgorithm": "sha256",
     "releaseNotes": "SuvikeDrive v1.0.1",
-    "size": 7761755,
-    "minOSVersion": "10.15",
+    "size": 5536694,
+    "minOSVersion": "14.0",
     "isMandatory": false,
-    "releaseDate": "2026-07-27"
+    "releaseDate": "2026-08-01"
 }
