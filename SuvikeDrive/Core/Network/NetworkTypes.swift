@@ -32,8 +32,9 @@ enum NetworkStatus {
     case unknown
 }
 
-// MARK: - HTTP方法
+// MARK: - HTTP方法（含 WebDAV 扩展）
 enum HTTPMethod: String {
+    // 标准 HTTP 方法
     case get = "GET"
     case post = "POST"
     case put = "PUT"
@@ -41,6 +42,26 @@ enum HTTPMethod: String {
     case head = "HEAD"
     case options = "OPTIONS"
     case patch = "PATCH"
+    
+    // ✅ WebDAV 扩展方法
+    case propfind = "PROPFIND"
+    case proppatch = "PROPPATCH"
+    case mkcol = "MKCOL"
+    case copy = "COPY"
+    case move = "MOVE"
+    case lock = "LOCK"
+    case unlock = "UNLOCK"
+    case report = "REPORT"
+    
+    // 是否为 WebDAV 方法
+    var isWebDAV: Bool {
+        switch self {
+        case .propfind, .proppatch, .mkcol, .copy, .move, .lock, .unlock, .report:
+            return true
+        default:
+            return false
+        }
+    }
 }
 
 // MARK: - 网络错误
@@ -59,6 +80,7 @@ enum NetworkError: Error {
     case downloadFailed(Error?)
     case uploadFailed(Error?)
     case fileOperationFailed(Error)
+    case webDAVError(statusCode: Int, message: String)
     
     var localizedDescription: String {
         switch self {
@@ -90,7 +112,69 @@ enum NetworkError: Error {
             return "上传失败: \(error?.localizedDescription ?? "未知错误")"
         case .fileOperationFailed(let error):
             return "文件操作失败: \(error.localizedDescription)"
+        case .webDAVError(let code, let message):
+            return "WebDAV错误 \(code): \(message)"
         }
     }
 }
 
+// MARK: - 流量记录
+struct TrafficRecord {
+    let timestamp: Date
+    let url: String
+    let bytesIn: Int64
+    let bytesOut: Int64
+    let duration: TimeInterval
+    let success: Bool
+    let error: String?
+}
+
+// MARK: - WebDAV 请求类型
+enum WebDAVRequestType {
+    case propfind(depth: Int)
+    case proppatch
+    case mkcol
+    case copy(destination: String, overwrite: Bool)
+    case move(destination: String, overwrite: Bool)
+    case lock
+    case unlock
+    case report
+    
+    var method: HTTPMethod {
+        switch self {
+        case .propfind: return .propfind
+        case .proppatch: return .proppatch
+        case .mkcol: return .mkcol
+        case .copy: return .copy
+        case .move: return .move
+        case .lock: return .lock
+        case .unlock: return .unlock
+        case .report: return .report
+        }
+    }
+    
+    var defaultHeaders: [String: String] {
+        var headers: [String: String] = [:]
+        switch self {
+        case .propfind(let depth):
+            headers["Depth"] = "\(depth)"
+            headers["Content-Type"] = "application/xml; charset=utf-8"
+        case .mkcol:
+            headers["Content-Type"] = "application/xml; charset=utf-8"
+        case .copy(let dest, let overwrite):
+            headers["Destination"] = dest
+            headers["Overwrite"] = overwrite ? "T" : "F"
+        case .move(let dest, let overwrite):
+            headers["Destination"] = dest
+            headers["Overwrite"] = overwrite ? "T" : "F"
+        case .lock:
+            headers["Content-Type"] = "application/xml; charset=utf-8"
+            headers["Timeout"] = "Infinite, Second-4100000000"
+        case .unlock:
+            break
+        case .proppatch, .report:
+            headers["Content-Type"] = "application/xml; charset=utf-8"
+        }
+        return headers
+    }
+}

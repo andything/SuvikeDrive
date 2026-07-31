@@ -3,11 +3,26 @@
 //  SuvikeDrive
 //
 //  功能: 日志核心管理（纯逻辑，无 UI）
-//        分级日志输出、文件管理、敏感信息脱敏
+//       分级日志输出、文件管理、敏感信息脱敏
+//  通信: 通过 EventBus 接收配置变更通知
 //
 
 import AppKit
 import Foundation
+
+// MARK: - 启动时间工具 (macOS 兼容版)
+extension Logger {
+    private static let processStartTime: Date = {
+        var mib = [CTL_KERN, KERN_PROC, KERN_PROC_PID, getpid()]
+        var proc = kinfo_proc()
+        var size = MemoryLayout<kinfo_proc>.size
+        
+        if sysctl(&mib, 4, &proc, &size, nil, 0) == -1 {
+            return Date() // 如果获取失败，兜底返回当前时间
+        }
+        return Date(timeIntervalSince1970: TimeInterval(proc.kp_proc.p_starttime.tv_sec))
+    }()
+}
 
 class Logger {
     static let shared = Logger()
@@ -21,6 +36,12 @@ class Logger {
     private let maxKeepDays: Int
     private let dateFormatter: DateFormatter
     private let fileDateFormatter: DateFormatter
+    
+    // MARK: - EventBus 订阅 Token
+    private var eventToken: SubscriptionToken?
+    
+    // MARK: - 日志文件更新回调（用于 UI 刷新）
+    var onLogFileUpdated: (() -> Void)?
     
     // MARK: - 敏感信息脱敏规则
     private let sensitivePatterns: [(pattern: String, replacement: String)] = [
@@ -82,16 +103,40 @@ class Logger {
         setupLogFile()
         cleanupOldLogs()
         
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(configurationChanged),
-            name: NSNotification.Name("ConfigurationChanged"),
-            object: nil
-        )
+        // ✅ 通过 EventBus 监听配置变更
+        setupEventBusListener()
     }
     
     deinit {
-        NotificationCenter.default.removeObserver(self)
+        eventToken?.unsubscribe()
+    }
+    
+    // MARK: - EventBus 事件监听
+    private func setupEventBusListener() {
+        eventToken = EventBus.shared.subscribe(
+            to: ConfigurationChanged.self,
+            priority: .low
+        ) { [weak self] event in
+            guard let self = self else { return }
+            
+            // 只处理日志相关配置变更
+            if event.key == "log.level" {
+                if let newLevel = event.newValue as? String {
+                    self.updateLogLevel(from: newLevel)
+                }
+            }
+        }
+    }
+    
+    private func updateLogLevel(from value: String) {
+        switch value.lowercased() {
+        case "debug": logLevel = .debug
+        case "info": logLevel = .info
+        case "warning": logLevel = .warning
+        case "error": logLevel = .error
+        default: logLevel = .info
+        }
+        info("日志级别已更新为: \(logLevel.rawValue.uppercased())")
     }
     
     func initialize() {
@@ -169,6 +214,17 @@ class Logger {
     func log(level: LogLevel, message: String, module: String = "General", file: String = #file, line: Int = #line) {
         guard level.priority >= logLevel.priority else { return }
         
+        // ✅ 终极杀手锏：如果是包含“死信”的日志，永远拦截！
+        if message.contains("事件移入死信队列") {
+            return
+        }
+        
+        // ✅ 启动期静音：如果 App 启动还没过 5 秒，直接拦截，不让它产生日志！
+        let startupCutoff = Date().timeIntervalSince(Self.processStartTime)
+        if startupCutoff < 5.0 {
+            return // 启动 5 秒内，任何日志都不写入、不推送！
+        }
+        
         let redactedMessage = redactSensitiveInfo(message)
         
         logQueue.async { [weak self] in
@@ -176,21 +232,8 @@ class Logger {
             
             let timestamp = self.dateFormatter.string(from: Date())
             let fileName = (file as NSString).lastPathComponent
-            let logMessage = "[\(timestamp)] [\(level.rawValue.uppercased())] [\(module)] [\(fileName):\(line)] \(redactedMessage)\n"
+            let logMessage = "[\(timestamp)] [\(level.displayName)] [\(module)] [\(fileName):\(line)] \(redactedMessage)\n"
             
-            self.writeToFile(logMessage)
-            print(logMessage, terminator: "")
-        }
-    }
-    
-    func secureLog(_ message: String, level: LogLevel = .info, module: String = "General") {
-        guard level.priority >= logLevel.priority else { return }
-        
-        logQueue.async { [weak self] in
-            guard let self = self else { return }
-            
-            let timestamp = self.dateFormatter.string(from: Date())
-            let logMessage = "[\(timestamp)] [\(level.rawValue.uppercased())] [SECURE] [\(module)] \(message)\n"
             self.writeToFile(logMessage)
             print(logMessage, terminator: "")
         }
@@ -228,8 +271,17 @@ class Logger {
             currentFileSize += UInt64(data.count)
         }
         
-        DispatchQueue.main.async {
-            NotificationCenter.default.post(name: .logFileUpdated, object: nil)
+        // ✅ 核心改动：写入日志后，立刻通过 EventBus 推送到 UI
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            
+            // 读取当前日志内容
+            let content = self.getLogFileContent() ?? "暂无日志内容"
+            // 发送给 LogView 更新
+            EventBus.shared.publish(LogContentUpdated(content: content))
+            
+            // 保留原有的回调通知，兼顾旧代码
+            self.onLogFileUpdated?()
         }
     }
     
@@ -416,6 +468,19 @@ class Logger {
         return logDirectory
     }
     
+    // ✅ 新增：获取当前日志文件的内容（用于推送更新到 UI）
+    func getLogFileContent() -> String? {
+        guard let logFile = currentLogFile,
+              FileManager.default.fileExists(atPath: logFile.path) else {
+            return nil
+        }
+        do {
+            return try String(contentsOf: logFile, encoding: .utf8)
+        } catch {
+            return "读取日志失败: \(error.localizedDescription)"
+        }
+    }
+    
     // MARK: - 清除所有日志
     func clearAllLogs() {
         guard let files = try? FileManager.default.contentsOfDirectory(at: logDirectory, includingPropertiesForKeys: nil) else { return }
@@ -425,20 +490,10 @@ class Logger {
         setupLogFile()
         currentFileSize = 0
         info("所有日志已清除")
-    }
-    
-    // MARK: - 配置变更
-    @objc private func configurationChanged() {
-        let newLevel = ConfigurationManager.shared.get(key: "log.level", defaultValue: "info")
-        switch newLevel.lowercased() {
-        case "debug": logLevel = .debug
-        case "info": logLevel = .info
-        case "warning": logLevel = .warning
-        case "error": logLevel = .error
-        default: logLevel = .info
+        // ✅ 通知 UI 日志已清空
+        DispatchQueue.main.async { [weak self] in
+            self?.onLogFileUpdated?()
         }
-        
-        info("日志配置已更新，当前级别: \(logLevel.rawValue.uppercased())")
     }
 }
 
@@ -459,6 +514,18 @@ enum LogLevel: String {
         case .error: return 3
         case .crash: return 4
         case .off: return 5
+        }
+    }
+    
+    // ✅ 新增：将英文枚举映射为中文显示
+    var displayName: String {
+        switch self {
+        case .debug: return "调试"
+        case .info: return "信息"
+        case .warning: return "警告"
+        case .error: return "错误"
+        case .crash: return "崩溃"
+        case .off: return "关闭"
         }
     }
 }

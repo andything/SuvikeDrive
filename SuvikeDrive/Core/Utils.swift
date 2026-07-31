@@ -415,3 +415,43 @@ class Utils {
         }
     }
 }
+
+// MARK: - Watchdog 配置常量
+struct WatchdogConfig {
+    static let heartbeatInterval: TimeInterval = 3.0
+    static let heartbeatTimeout: TimeInterval = 10.0
+    static let restartDelay: TimeInterval = 3.0
+    static let maxRestartCount: Int = 5
+    static let restartWindow: TimeInterval = 60.0
+    static let heartbeatFile = "/tmp/com.suvikedrive.heartbeat"
+    static let pidFile = "/tmp/com.suvikedrive.watchdog.pid"
+    static let disableFile = "/tmp/com.suvikedrive.watchdog.disable"
+}
+
+// MARK: - Watchdog 常量（向后兼容）
+enum WatchdogConstants {
+    static let heartbeatInterval: TimeInterval = 3.0
+    static let heartbeatTimeout: TimeInterval = 10.0
+    static let restartDelay: TimeInterval = 3.0
+    static let maxRestartCount: Int = 5
+    static let restartWindow: TimeInterval = 60.0
+    static let heartbeatFile = "/tmp/com.suvikedrive.heartbeat"
+    static let pidFile = "/tmp/com.suvikedrive.watchdog.pid"
+    static let disableFile = "/tmp/com.suvikedrive.watchdog.disable"
+}
+
+// MARK: - Notification.Name 扩展
+extension Notification.Name {
+    
+    // MARK: - 缓存事件
+    static let cacheSizeChanged = Notification.Name("CacheSizeChanged")
+    static let serverCacheSizeChanged = Notification.Name("ServerCacheSizeChanged")
+    static let cacheCleared = Notification.Name("CacheCleared")
+    
+    // MARK: - 挂载事件
+    static let mountCompleted = Notification.Name("MountCompleted")
+    static let unmountCompleted = Notification.Name("UnmountCompleted")
+    
+    // MARK: - 看门狗事件
+    static let watchdogDidDetectHang = Notification.Name("com.suvikedrive.watchdog.didDetectHang")
+}

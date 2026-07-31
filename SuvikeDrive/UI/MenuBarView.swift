@@ -14,8 +14,6 @@ struct MenuBarRowView: View {
     let serverID: String
     let isMounted: Bool
     let isMounting: Bool
-    let onToggleMount: () -> Void
-    let onEdit: () -> Void
     
     @State private var isHovering: Bool = false
     
@@ -50,7 +48,7 @@ struct MenuBarRowView: View {
                     .foregroundColor(isMounted ? .orange : .green)
                     .font(.system(size: 18))
                     .onTapGesture {
-                        onToggleMount()
+                        EventBus.shared.publish(MenuBarMountToggleRequested(serverID: serverID))
                     }
                     .help(isMounted ? "卸载" : "挂载")
                     .zIndex(1)
@@ -74,7 +72,7 @@ struct MenuBarRowView: View {
             }
         }
         .onTapGesture(count: 2) {
-            onEdit()
+            EventBus.shared.publish(MenuBarEditServerRequested(serverID: serverID))
         }
     }
     
@@ -91,8 +89,16 @@ struct MenuBarRowView: View {
 struct MenuBarActionButton: View {
     let title: String
     let icon: String
+    let foregroundColor: Color
     let action: () -> Void
-    var foregroundColor: Color = .primary
+    
+    init(title: String, icon: String, foregroundColor: Color = .primary, action: @escaping () -> Void) {
+        self.title = title
+        self.icon = icon
+        self.foregroundColor = foregroundColor
+        self.action = action
+    }
+    
     @State private var isHovering = false
     
     var body: some View {
@@ -148,7 +154,6 @@ struct StatusBadge: View {
 
 // MARK: - 空状态视图
 struct EmptyStateView: View {
-    @Binding var showingNewConnection: Bool
     @State private var isHovering = false
     
     var body: some View {
@@ -179,44 +184,25 @@ struct EmptyStateView: View {
             }
         }
         .onTapGesture {
-            showingNewConnection = true
+            EventBus.shared.publish(MenuBarOpenNewConnectionRequested())
         }
     }
 }
 
-// MARK: - 主菜单视图（纯 UI）
+// MARK: - 主菜单视图（纯 UI，所有逻辑通过 EventBus 通信）
 struct MenuBarView: View {
     // MARK: - UI State
     @State private var servers: [ServerConfig] = []
     @State private var mountStates: [String: Bool] = [:]
     @State private var mountingStates: [String: Bool] = [:]
     
-    // MARK: - 网络状态
-    @ObservedObject private var networkManager = NetworkManager.shared
+    // MARK: - 网络流量状态（通过 EventBus 更新）
+    @State private var downloadSpeed: Double = 0
+    @State private var uploadSpeed: Double = 0
+    @State private var mountedCount: Int = 0
     
-    // MARK: - OTA 管理器
-    @StateObject private var otaViewModel = OTAManagerViewModel()
-    
-    // MARK: - 窗口控制
-    @State private var showingNewConnection = false
-    @State private var showingLogs = false
-    @State private var showingAbout = false
-    @State private var showingSettings = false
-    @State private var showingConnectionManagement = false
-    
-    @State private var editingServerID: String? = nil
-    @State private var showingEditSheet = false
-    
-    // MARK: - EventBus 订阅
+    // MARK: - EventBus 订阅 Token
     @State private var eventTokens: [SubscriptionToken] = []
-    
-    // MARK: - 打开 Sheet 前关闭 Popover
-    private func openSheet(_ action: @escaping () -> Void) {
-        NotificationCenter.default.post(name: NSNotification.Name("OpenSheetFromPopover"), object: nil)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            action()
-        }
-    }
     
     var body: some View {
         VStack(spacing: 0) {
@@ -244,7 +230,7 @@ struct MenuBarView: View {
             ScrollView {
                 VStack(spacing: 4) {
                     if servers.isEmpty {
-                        EmptyStateView(showingNewConnection: $showingNewConnection)
+                        EmptyStateView()
                     } else {
                         ForEach(servers.indices, id: \.self) { index in
                             let server = servers[index]
@@ -252,14 +238,7 @@ struct MenuBarView: View {
                                 server: server,
                                 serverID: server.id,
                                 isMounted: mountStates[server.id] ?? false,
-                                isMounting: mountingStates[server.id] ?? false,
-                                onToggleMount: {
-                                    toggleMount(serverID: server.id)
-                                },
-                                onEdit: {
-                                    editingServerID = server.id
-                                    showingEditSheet = true
-                                }
+                                isMounting: mountingStates[server.id] ?? false
                             )
                         }
                     }
@@ -275,58 +254,57 @@ struct MenuBarView: View {
             // MARK: - 底部功能菜单
             VStack(spacing: 2) {
                 MenuBarActionButton(
-                    title: "新驱动器",
-                    icon: "plus",
-                    action: {
-                        openSheet { showingNewConnection = true }
-                    }
-                )
+                    title: "添加连接",
+                    icon: "plus"
+                ) {
+                    EventBus.shared.publish(MenuBarOpenNewConnectionRequested())
+                }
                 
                 MenuBarActionButton(
                     title: "连接管理",
-                    icon: "list.bullet",
-                    action: {
-                        openSheet { showingConnectionManagement = true }
-                    }
-                )
+                    icon: "list.bullet"
+                ) {
+                    EventBus.shared.publish(MenuBarOpenConnectionManagerRequested())
+                }
+                
+                MenuBarActionButton(
+                    title: "文件管理",
+                    icon: "folder"
+                ) {
+                    let firstID = servers.first?.id
+                    EventBus.shared.publish(MenuBarOpenFileBrowserRequested(serverID: firstID))
+                }
                 
                 MenuBarActionButton(
                     title: "偏好设置",
-                    icon: "gear",
-                    action: {
-                        openSheet { showingSettings = true }
-                    }
-                )
+                    icon: "gear"
+                ) {
+                    EventBus.shared.publish(MenuBarOpenSettingsRequested())
+                }
                 
                 Divider()
                     .padding(.vertical, 4)
                 
                 MenuBarActionButton(
                     title: "运行日志",
-                    icon: "doc.text",
-                    action: {
-                        openSheet { showingLogs = true }
-                    }
-                )
+                    icon: "doc.text"
+                ) {
+                    EventBus.shared.publish(MenuBarOpenLogsRequested())
+                }
                 
-                // ✅ 检查更新 - 使用 otaViewModel
                 MenuBarActionButton(
                     title: "检查更新",
-                    icon: "arrow.triangle.2.circlepath",
-                    action: {
-                        openSheet {
-                            otaViewModel.checkForUpdate()
-                        }
-                    }
-                )
+                    icon: "arrow.triangle.2.circlepath"
+                ) {
+                    EventBus.shared.publish(MenuBarOpenOTARequested())
+                }
                 
                 MenuBarActionButton(
                     title: "关于 \(AppInfo.appName)",
-                    icon: "info.circle",
-                    action: {
-                        openSheet { showingAbout = true }
-                    }
-                )
+                    icon: "info.circle"
+                ) {
+                    EventBus.shared.publish(MenuBarOpenAboutRequested())
+                }
                 
                 Divider()
                     .padding(.vertical, 4)
@@ -335,11 +313,10 @@ struct MenuBarView: View {
                     MenuBarActionButton(
                         title: "退出",
                         icon: "power",
-                        action: {
-                            NSApplication.shared.terminate(nil)
-                        },
                         foregroundColor: .red
-                    )
+                    ) {
+                        EventBus.shared.publish(MenuBarAppQuitRequested())
+                    }
                     .padding(.leading, -12)
                     
                     Spacer()
@@ -353,63 +330,11 @@ struct MenuBarView: View {
             .padding(.vertical, 6)
         }
         .frame(width: 320)
-        .onTapGesture {
-            NotificationCenter.default.post(name: NSNotification.Name("CloseMainPopover"), object: nil)
-        }
-        .sheet(isPresented: $showingNewConnection) {
-            AddServerView()
-        }
-        .sheet(isPresented: $showingEditSheet) {
-            if let serverID = editingServerID {
-                AddServerView(serverID: serverID, isEditing: true)
-                    .onDisappear {
-                        editingServerID = nil
-                    }
-            }
-        }
-        .sheet(isPresented: $showingLogs) {
-            LogView(
-                onLoadLogs: {
-                    guard let logFile = Logger.shared.getCurrentLogFile() else {
-                        return nil
-                    }
-                    guard FileManager.default.fileExists(atPath: logFile.path) else {
-                        return nil
-                    }
-                    return try? String(contentsOf: logFile, encoding: .utf8)
-                },
-                onClearLogs: {
-                    Logger.shared.clearAllLogs()
-                },
-                onExportLogs: {
-                    return Logger.shared.exportLogs() != nil
-                },
-                onGetLogPath: {
-                    return Logger.shared.getLogDirectory().path
-                }
-            )
-            .frame(width: 700, height: 500)
-        }
-        .sheet(isPresented: $showingAbout) {
-            AboutView()
-        }
-        .sheet(isPresented: $showingSettings) {
-            SettingsView()
-        }
-        .sheet(isPresented: $showingConnectionManagement) {
-            ConnectionListView()
-                .frame(width: 700, height: 500)
-        }
-        // ✅ OTA 管理器视图（用于显示 sheet）
-        .overlay(
-            OTAManagerView(viewModel: otaViewModel)
-        )
-        .onReceive(NotificationCenter.default.publisher(for: .MountStatusChanged)) { _ in
-            updateMountStates()
-        }
         .onAppear {
             setupEventBusListeners()
+            
             EventBus.shared.publish(LoadServerListRequest())
+            updateMountStates()
         }
         .onDisappear {
             eventTokens.forEach { $0.unsubscribe() }
@@ -429,6 +354,87 @@ struct MenuBarView: View {
             }
         }
         eventTokens.append(listToken)
+        
+        let mountToken = EventBus.shared.subscribe(
+            to: MountCompleted.self,
+            priority: .high
+        ) { event in
+            DispatchQueue.main.async {
+                self.mountStates[event.serverID] = true
+                self.mountingStates[event.serverID] = false
+                self.updateMountedCount()
+            }
+        }
+        eventTokens.append(mountToken)
+        
+        let mountFailToken = EventBus.shared.subscribe(
+            to: MountFailed.self,
+            priority: .high
+        ) { event in
+            DispatchQueue.main.async {
+                self.mountStates[event.serverID] = false
+                self.mountingStates[event.serverID] = false
+                self.updateMountedCount()
+                Logger.shared.error("挂载失败: \(event.serverID) - \(event.error)")
+            }
+        }
+        eventTokens.append(mountFailToken)
+        
+        let unmountToken = EventBus.shared.subscribe(
+            to: UnmountCompleted.self,
+            priority: .high
+        ) { event in
+            DispatchQueue.main.async {
+                self.mountStates[event.serverID] = false
+                self.mountingStates[event.serverID] = false
+                self.updateMountedCount()
+            }
+        }
+        eventTokens.append(unmountToken)
+        
+        let unmountFailToken = EventBus.shared.subscribe(
+            to: UnmountFailed.self,
+            priority: .high
+        ) { event in
+            DispatchQueue.main.async {
+                self.mountStates[event.serverID] = false
+                self.mountingStates[event.serverID] = false
+                self.updateMountedCount()
+                Logger.shared.error("卸载失败: \(event.serverID) - \(event.error)")
+            }
+        }
+        eventTokens.append(unmountFailToken)
+        
+        let mountStartToken = EventBus.shared.subscribe(
+            to: MountStarted.self,
+            priority: .high
+        ) { event in
+            DispatchQueue.main.async {
+                self.mountingStates[event.serverID] = true
+            }
+        }
+        eventTokens.append(mountStartToken)
+        
+        let unmountStartToken = EventBus.shared.subscribe(
+            to: UnmountStarted.self,
+            priority: .high
+        ) { event in
+            DispatchQueue.main.async {
+                self.mountingStates[event.serverID] = true
+            }
+        }
+        eventTokens.append(unmountStartToken)
+        
+        let trafficToken = EventBus.shared.subscribe(
+            to: TrafficStatsUpdated.self,
+            priority: .high
+        ) { event in
+            DispatchQueue.main.async {
+                self.downloadSpeed = event.downloadSpeed
+                self.uploadSpeed = event.uploadSpeed
+            }
+        }
+        eventTokens.append(trafficToken)
     }
     
     // MARK: - 更新挂载状态
@@ -437,41 +443,11 @@ struct MenuBarView: View {
         for server in servers {
             mountStates[server.id] = mountedServers.contains(server.id)
         }
+        updateMountedCount()
     }
     
-    // MARK: - 挂载/卸载
-    private func toggleMount(serverID: String) {
-        guard mountingStates[serverID] != true else { return }
-        mountingStates[serverID] = true
-        
-        let isCurrentlyMounted = mountStates[serverID] ?? false
-        guard let server = servers.first(where: { $0.id == serverID }) else {
-            mountingStates[serverID] = false
-            return
-        }
-        
-        if isCurrentlyMounted {
-            MountManager.shared.unmount(serverID: serverID, force: false) { _ in
-                DispatchQueue.main.async {
-                    mountingStates[serverID] = false
-                    mountStates[serverID] = false
-                    NotificationCenter.default.post(name: .MountStatusChanged, object: nil)
-                }
-            }
-        } else {
-            MountManager.shared.mount(serverID: serverID, config: server) { result in
-                DispatchQueue.main.async {
-                    mountingStates[serverID] = false
-                    switch result {
-                    case .success:
-                        mountStates[serverID] = true
-                    case .failure(let error):
-                        print("挂载失败: \(error)")
-                    }
-                    NotificationCenter.default.post(name: .MountStatusChanged, object: nil)
-                }
-            }
-        }
+    private func updateMountedCount() {
+        mountedCount = mountStates.values.filter { $0 }.count
     }
     
     // MARK: - 网络状态视图
@@ -481,7 +457,7 @@ struct MenuBarView: View {
                 Image(systemName: "arrow.down.circle.fill")
                     .font(.system(size: 8))
                     .foregroundColor(.blue)
-                Text(formatSpeedCompact(networkManager.downloadSpeed))
+                Text(formatSpeedCompact(downloadSpeed))
                     .font(.system(size: 9, design: .monospaced))
                     .foregroundColor(.secondary)
             }
@@ -491,7 +467,7 @@ struct MenuBarView: View {
                 Image(systemName: "arrow.up.circle.fill")
                     .font(.system(size: 8))
                     .foregroundColor(.green)
-                Text(formatSpeedCompact(networkManager.uploadSpeed))
+                Text(formatSpeedCompact(uploadSpeed))
                     .font(.system(size: 9, design: .monospaced))
                     .foregroundColor(.secondary)
             }
@@ -503,9 +479,9 @@ struct MenuBarView: View {
             
             HStack(spacing: 2) {
                 Circle()
-                    .fill(MountManager.shared.getMountedServers().count > 0 ? Color.green : Color.gray)
+                    .fill(mountedCount > 0 ? Color.green : Color.gray)
                     .frame(width: 4, height: 4)
-                Text("\(MountManager.shared.getMountedServers().count)")
+                Text("\(mountedCount)")
                     .font(.system(size: 9, design: .monospaced))
                     .foregroundColor(.secondary)
                 Image(systemName: "network")

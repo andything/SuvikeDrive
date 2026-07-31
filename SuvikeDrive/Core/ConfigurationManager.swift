@@ -3,6 +3,7 @@
 //  SuvikeDrive
 //
 //  功能: 配置管理
+//  通信: 通过 EventBus 发布配置变更事件
 //
 
 import AppKit
@@ -217,11 +218,22 @@ class ConfigurationManager {
         }
     }
     
-    // MARK: - 通知发送
+    // MARK: - ✅ 通知发送（改用 EventBus）
     private func postConfigurationChanged() {
         DispatchQueue.main.async {
-            NotificationCenter.default.post(name: .ConfigurationChanged, object: nil)
-            Logger.shared.debug("配置已变更，已发送通知")
+            // ✅ 发布配置变更事件（替代 NotificationCenter）
+            EventBus.shared.publish(
+                ConfigurationChanged(
+                    key: "configuration",
+                    oldValue: nil,
+                    newValue: self._config
+                )
+            )
+            // 同时发布服务器列表更新
+            EventBus.shared.publish(
+                ServerListLoaded(servers: self.getServers())
+            )
+            Logger.shared.debug("配置已变更，已发送 EventBus 通知")
         }
     }
     

@@ -8,8 +8,6 @@
 import SwiftUI
 import Combine
 
-// ⚠️ 注意：UpdateFlowState 在 DownloadProgressView.swift 中定义，这里不要重复定义
-
 // MARK: - OTA 管理器 ViewModel
 class OTAManagerViewModel: ObservableObject {
     @Published var showingUpdateWindow = false
@@ -35,6 +33,7 @@ class OTAManagerViewModel: ObservableObject {
     
     // MARK: - EventBus 监听
     private func setupEventBusListeners() {
+        // 1. 监听更新可用事件（需要下载）
         let availableToken = EventBus.shared.subscribe(
             to: OTAUpdateAvailable.self,
             priority: .medium
@@ -51,6 +50,28 @@ class OTAManagerViewModel: ObservableObject {
         }
         eventTokens.append(availableToken)
         
+        // 2. 监听安装包已就绪事件（已有完整安装包）
+        let packageReadyToken = EventBus.shared.subscribe(
+            to: OTAPackageReady.self,
+            priority: .medium
+        ) { [weak self] event in
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                if let updateInfo = OTAManager.shared.getUpdateInfo() {
+                    self.updateVersion = updateInfo.version
+                    self.updateReleaseNotes = updateInfo.releaseNotes
+                    self.updateSize = ByteCountFormatter().string(fromByteCount: updateInfo.size)
+                    self.isMandatory = updateInfo.isMandatory
+                }
+                self.updateFlowState = .downloadComplete
+                self.updateStatusText = "安装包已准备就绪，点击安装"
+                self.updateProgress = 1.0
+                self.showingUpdateWindow = true
+            }
+        }
+        eventTokens.append(packageReadyToken)
+        
+        // 3. 监听下载进度
         let progressToken = EventBus.shared.subscribe(
             to: OTADownloadProgress.self,
             priority: .medium
@@ -72,19 +93,22 @@ class OTAManagerViewModel: ObservableObject {
         }
         eventTokens.append(progressToken)
         
+        // 4. 监听下载完成
         let completeToken = EventBus.shared.subscribe(
             to: OTADownloadComplete.self,
             priority: .medium
         ) { [weak self] event in
             DispatchQueue.main.async {
                 guard let self = self else { return }
-                self.updateStatusText = "下载完成"
-                self.updateProgress = 1
+                // ✅ 强制更新状态
+                self.updateStatusText = "下载完成，点击安装"
+                self.updateProgress = 1.0
                 self.updateFlowState = .downloadComplete
             }
         }
         eventTokens.append(completeToken)
         
+        // 5. 监听安装开始
         let installStartedToken = EventBus.shared.subscribe(
             to: OTAInstallStarted.self,
             priority: .medium
@@ -92,23 +116,26 @@ class OTAManagerViewModel: ObservableObject {
             DispatchQueue.main.async {
                 guard let self = self else { return }
                 self.updateFlowState = .installing
-                self.updateStatusText = "正在安装更新..."
+                self.updateStatusText = "⏳ 正在安装更新..."
             }
         }
         eventTokens.append(installStartedToken)
         
+        // 6. 监听安装完成
         let installCompleteToken = EventBus.shared.subscribe(
             to: OTAInstallComplete.self,
             priority: .medium
         ) { [weak self] event in
             DispatchQueue.main.async {
                 guard let self = self else { return }
-                self.updateStatusText = "安装完成，即将重启..."
+                self.updateStatusText = "✅ 更新成功！即将重启..."
                 self.updateFlowState = .downloadComplete
+                self.updateProgress = 1.0
             }
         }
         eventTokens.append(installCompleteToken)
         
+        // 7. 监听安装失败
         let installFailedToken = EventBus.shared.subscribe(
             to: OTAInstallFailed.self,
             priority: .medium
@@ -116,7 +143,7 @@ class OTAManagerViewModel: ObservableObject {
             DispatchQueue.main.async {
                 guard let self = self else { return }
                 self.updateFlowState = .error
-                self.updateStatusText = "安装失败"
+                self.updateStatusText = "❌ 安装失败"
                 self.updateError = event.error
             }
         }
@@ -147,14 +174,32 @@ class OTAManagerViewModel: ObservableObject {
         }
     }
     
+    // MARK: - 下载更新
     func startDownload() {
-        guard OTAManager.shared.getUpdateInfo() != nil else {
+        guard let updateInfo = OTAManager.shared.getUpdateInfo() else {
             updateFlowState = .error
-            updateStatusText = "下载失败"
+            updateStatusText = "❌ 下载失败"
             updateError = "未找到更新信息"
             return
         }
         
+        let packagePath = OTAManager.shared.getUpdatePackagePath(for: updateInfo.version)
+        
+        // ✅ 检查本地是否有安装包
+        if FileManager.default.fileExists(atPath: packagePath.path) {
+            let isValid = OTAManager.shared.verifyUpdatePackage(at: packagePath, with: updateInfo)
+            if isValid {
+                updateFlowState = .downloadComplete
+                updateStatusText = "安装包已准备就绪，点击安装"
+                updateProgress = 1.0
+                return
+            } else {
+                try? FileManager.default.removeItem(at: packagePath)
+                updateStatusText = "安装包已损坏，重新下载..."
+            }
+        }
+        
+        // 没有完整安装包，开始下载
         updateFlowState = .downloading
         updateProgress = 0
         updateStatusText = "正在下载更新..."
@@ -165,21 +210,32 @@ class OTAManagerViewModel: ObservableObject {
             DispatchQueue.main.async {
                 guard let self = self else { return }
                 switch result {
-                case .success:
-                    break
+                case .success(let url):
+                    if OTAManager.shared.verifyUpdatePackage(at: url, with: updateInfo) {
+                        // ✅ 直接更新状态，确保 UI 刷新
+                        self.updateFlowState = .downloadComplete
+                        self.updateStatusText = "下载完成，点击安装"
+                        self.updateProgress = 1.0
+                    } else {
+                        try? FileManager.default.removeItem(at: url)
+                        self.updateFlowState = .error
+                        self.updateStatusText = "❌ 下载失败"
+                        self.updateError = "安装包校验失败，请重试"
+                    }
                 case .failure(let error):
                     self.updateFlowState = .error
-                    self.updateStatusText = "下载失败"
+                    self.updateStatusText = "❌ 下载失败"
                     self.updateError = error.localizedDescription
                 }
             }
         }
     }
     
+    // MARK: - 安装更新
     func performInstall() {
         guard let updateInfo = OTAManager.shared.getUpdateInfo() else {
             updateFlowState = .error
-            updateStatusText = "安装失败"
+            updateStatusText = "❌ 安装失败"
             updateError = "未找到更新信息"
             return
         }
@@ -188,23 +244,34 @@ class OTAManagerViewModel: ObservableObject {
         
         guard FileManager.default.fileExists(atPath: packagePath.path) else {
             updateFlowState = .error
-            updateStatusText = "更新包不存在"
-            updateError = "更新包已损坏或丢失，请重新下载"
+            updateStatusText = "❌ 安装失败"
+            updateError = "更新包不存在，请重新下载"
+            return
+        }
+        
+        let isValid = OTAManager.shared.verifyUpdatePackage(at: packagePath, with: updateInfo)
+        if !isValid {
+            try? FileManager.default.removeItem(at: packagePath)
+            updateFlowState = .error
+            updateStatusText = "❌ 安装失败"
+            updateError = "更新包已损坏，请重新下载"
             return
         }
         
         updateFlowState = .installing
-        updateStatusText = "正在安装更新..."
+        updateStatusText = "⏳ 正在安装更新..."
         
         OTAManager.shared.installUpdate(updatePackage: packagePath) { [weak self] result in
             DispatchQueue.main.async {
                 guard let self = self else { return }
                 switch result {
                 case .success:
-                    break
+                    self.updateFlowState = .downloadComplete
+                    self.updateStatusText = "✅ 更新成功！即将重启..."
+                    self.updateProgress = 1.0
                 case .failure(let error):
                     self.updateFlowState = .error
-                    self.updateStatusText = "安装失败"
+                    self.updateStatusText = "❌ 安装失败"
                     self.updateError = error.localizedDescription
                 }
             }

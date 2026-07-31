@@ -96,33 +96,6 @@ struct ConnectionCapsulePrimaryButton: View {
     }
 }
 
-// MARK: - 连接管理专用完成按钮
-struct ConnectionCapsuleDoneButton: View {
-    let action: () -> Void
-    @State private var isHovering: Bool = false
-    
-    var body: some View {
-        Button(action: action) {
-            Text("完成")
-                .font(.system(size: 13, weight: .medium))
-                .foregroundColor(.white)
-                .padding(.horizontal, 18)
-                .padding(.vertical, 5)
-                .background(
-                    Capsule()
-                        .fill(isHovering ? Color.accentColor.opacity(0.8) : Color.accentColor)
-                )
-        }
-        .buttonStyle(.plain)
-        .keyboardShortcut(.escape)
-        .onHover { hovering in
-            withAnimation(.easeInOut(duration: 0.15)) {
-                isHovering = hovering
-            }
-        }
-    }
-}
-
 // MARK: - 密码输入对话框
 struct PasswordInputDialog: View {
     @Binding var password: String
@@ -196,154 +169,10 @@ struct PasswordInputDialog: View {
     }
 }
 
-// MARK: - 连接行视图（使用 ServerConfig，纯 UI）
-struct ConnectionRowView: View {
-    let server: ServerConfig
-    let serverID: String
-    let onDelete: () -> Void
-    let onEdit: () -> Void
-    
-    @State private var showingEdit = false
-    @State private var isMounted = false
-    @State private var isMounting = false
-    @State private var mountError: String?
-    @State private var isHovering = false
-    @State private var showingDeleteAlert = false
-    
-    var body: some View {
-        HStack(spacing: 8) {
-            Circle()
-                .fill(isMounted ? Color.green : (isMounting ? Color.orange : Color.gray))
-                .frame(width: 8, height: 8)
-            
-            VStack(alignment: .leading, spacing: 1) {
-                Text(server.name)
-                    .font(.system(size: 13, weight: .medium))
-                    .lineLimit(1)
-                    .foregroundColor(.primary)
-                Text(server.url)
-                    .font(.system(size: 11))
-                    .foregroundColor(.secondary)
-                    .lineLimit(1)
-            }
-            
-            Spacer()
-            
-            if let error = mountError {
-                Text("⚠️")
-                    .font(.system(size: 11))
-                    .help(error)
-            }
-            
-            Text(isMounted ? "已挂载" : (isMounting ? "挂载中..." : "未挂载"))
-                .font(.system(size: 11))
-                .foregroundColor(isMounted ? .green : (isMounting ? .orange : .secondary))
-                .padding(.trailing, 4)
-            
-            HStack(spacing: 6) {
-                Button(action: toggleMount) {
-                    Text(isMounted ? "卸载" : "挂载")
-                        .font(.system(size: 11))
-                        .foregroundColor(isMounted ? .orange : .green)
-                }
-                .buttonStyle(.plain)
-                .disabled(isMounting)
-                
-                Button(action: { showingEdit = true }) {
-                    Text("编辑")
-                        .font(.system(size: 11))
-                        .foregroundColor(.blue)
-                }
-                .buttonStyle(.plain)
-                
-                Button(action: { showingDeleteAlert = true }) {
-                    Text("✕")
-                        .font(.system(size: 11))
-                        .foregroundColor(.red)
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(
-            RoundedRectangle(cornerRadius: 6)
-                .fill(isHovering ? Color.gray.opacity(0.12) : Color.gray.opacity(0.04))
-        )
-        .onHover { hovering in
-            withAnimation(.easeInOut(duration: 0.15)) {
-                isHovering = hovering
-            }
-        }
-        .onTapGesture(count: 2) {
-            showingEdit = true
-        }
-        .onAppear {
-            updateMountStatus()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .MountStatusChanged)) { _ in
-            updateMountStatus()
-        }
-        .sheet(isPresented: $showingEdit) {
-            AddServerView(serverID: serverID, isEditing: true)
-                .frame(width: 560, height: 660)
-                .onDisappear {
-                    onEdit()
-                    updateMountStatus()
-                }
-        }
-        .alert("确认删除", isPresented: $showingDeleteAlert) {
-            Button("删除", role: .destructive) {
-                // ✅ 通过 EventBus 发送删除请求
-                EventBus.shared.publish(DeleteServerConfigRequest(serverID: serverID))
-                onDelete()
-            }
-            Button("取消", role: .cancel) {}
-        } message: {
-            Text("确定要删除「\(server.name)」吗？")
-        }
-    }
-    
-    func updateMountStatus() {
-        isMounted = MountManager.shared.getMountedServers().contains(serverID)
-        mountError = nil
-    }
-    
-    func toggleMount() {
-        isMounting = true
-        mountError = nil
-        
-        if isMounted {
-            MountManager.shared.unmount(serverID: serverID, force: false) { _ in
-                DispatchQueue.main.async {
-                    self.isMounted = false
-                    self.isMounting = false
-                    NotificationCenter.default.post(name: .MountStatusChanged, object: nil)
-                }
-            }
-        } else {
-            MountManager.shared.mount(serverID: serverID, config: server) { result in
-                DispatchQueue.main.async {
-                    self.isMounting = false
-                    switch result {
-                    case .success:
-                        self.isMounted = true
-                        self.mountError = nil
-                    case .failure(let error):
-                        self.mountError = error.localizedDescription
-                    }
-                    NotificationCenter.default.post(name: .MountStatusChanged, object: nil)
-                }
-            }
-        }
-    }
-}
-
-// MARK: - 服务器列表管理视图（纯 UI + EventBus）
+// MARK: - 服务器列表管理视图
 struct ConnectionListView: View {
     @State private var servers: [ServerConfig] = []
     @State private var searchText = ""
-    @State private var showingNewConnection = false
     @State private var showingImportDialog = false
     @State private var showingExportDialog = false
     @State private var exportData: Data?
@@ -359,10 +188,8 @@ struct ConnectionListView: View {
     @State private var showToast: Bool = false
     @State private var toastColor: Color = .green
     
-    // ✅ EventBus 订阅 Token
     @State private var eventTokens: [SubscriptionToken] = []
     
-    // 搜索
     var filteredServers: [ServerConfig] {
         if searchText.isEmpty {
             return servers
@@ -379,15 +206,45 @@ struct ConnectionListView: View {
         }
     }
     
+    // MARK: - 打开添加连接窗口（通过 EventBus）
+    private func openAddServerWindow() {
+        EventBus.shared.publish(
+            ConfigurationChanged(
+                key: "popover.openNewConnection",
+                oldValue: nil,
+                newValue: nil
+            )
+        )
+    }
+    
+    // MARK: - 删除连接
+    private func deleteConnection(serverID: String) {
+        print("📋 [ConnectionListView] 删除连接: \(serverID)")
+        
+        let alert = NSAlert()
+        alert.messageText = "删除连接"
+        alert.informativeText = "确定要删除此连接吗？\n\n这将卸载卷并删除挂载文件夹。"
+        alert.alertStyle = .critical
+        alert.addButton(withTitle: "删除")
+        alert.addButton(withTitle: "取消")
+        alert.window.level = .statusBar
+        
+        let response = alert.runModal()
+        if response == .alertFirstButtonReturn {
+            EventBus.shared.publish(
+                ConfigurationChanged(
+                    key: "server.delete",
+                    oldValue: nil,
+                    newValue: serverID
+                )
+            )
+        }
+    }
+    
     var body: some View {
         VStack(spacing: 0) {
             // 标题栏
             HStack {
-                Text("连接管理")
-                    .font(.title2)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.primary)
-                
                 Spacer()
                 
                 HStack(spacing: 12) {
@@ -416,11 +273,9 @@ struct ConnectionListView: View {
                     ConnectionCapsulePrimaryButton(
                         title: "添加",
                         icon: "plus",
-                        action: { showingNewConnection = true },
+                        action: openAddServerWindow,
                         help: "添加新服务器"
                     )
-                    
-                    ConnectionCapsuleDoneButton(action: handleDone)
                 }
             }
             .padding(.horizontal, 24)
@@ -463,16 +318,12 @@ struct ConnectionListView: View {
             } else {
                 ScrollView {
                     VStack(spacing: 4) {
-                        ForEach(filteredServers.indices, id: \.self) { index in
-                            let server = filteredServers[index]
+                        ForEach(filteredServers, id: \.id) { server in
                             ConnectionRowView(
                                 server: server,
                                 serverID: server.id,
-                                onDelete: {
-                                    loadServers()
-                                },
-                                onEdit: {
-                                    loadServers()
+                                onDelete: { serverID in
+                                    deleteConnection(serverID: serverID)
                                 }
                             )
                         }
@@ -531,14 +382,6 @@ struct ConnectionListView: View {
         }
         .frame(width: 700, height: 500)
         .background(Color(NSColor.windowBackgroundColor))
-        .sheet(isPresented: $showingNewConnection) {
-            AddServerView()
-                .frame(width: 560, height: 660)
-                .onDisappear {
-                    loadServers()
-                    updateMountStatus()
-                }
-        }
         .fileImporter(
             isPresented: $showingImportDialog,
             allowedContentTypes: [.json, .data],
@@ -594,17 +437,11 @@ struct ConnectionListView: View {
             loadServers()
             updateMountStatus()
             setupEventBusListeners()
-            // ✅ 通过 EventBus 加载服务器列表
             EventBus.shared.publish(LoadServerListRequest())
         }
         .onDisappear {
-            // ✅ 清理 EventBus 订阅
             eventTokens.forEach { $0.unsubscribe() }
             eventTokens.removeAll()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .ConfigurationChanged)) { _ in
-            loadServers()
-            updateMountStatus()
         }
     }
     
@@ -626,9 +463,8 @@ struct ConnectionListView: View {
         .background(Color(NSColor.controlBackgroundColor))
     }
     
-    // MARK: - ✅ EventBus 事件监听
+    // MARK: - EventBus 事件监听
     private func setupEventBusListeners() {
-        // 监听服务器列表更新
         let listToken = EventBus.shared.subscribe(
             to: ServerListLoaded.self,
             priority: .medium
@@ -640,7 +476,6 @@ struct ConnectionListView: View {
         }
         eventTokens.append(listToken)
         
-        // 监听保存成功
         let saveToken = EventBus.shared.subscribe(
             to: ServerConfigSaved.self,
             priority: .medium
@@ -653,7 +488,6 @@ struct ConnectionListView: View {
         }
         eventTokens.append(saveToken)
         
-        // 监听删除成功
         let deleteToken = EventBus.shared.subscribe(
             to: ServerConfigDeleted.self,
             priority: .medium
@@ -666,13 +500,57 @@ struct ConnectionListView: View {
             }
         }
         eventTokens.append(deleteToken)
-    }
-    
-    // MARK: - 完成按钮处理
-    func handleDone() {
-        loadServers()
-        updateMountStatus()
-        dismiss()
+        
+        let configToken = EventBus.shared.subscribe(
+            to: ConfigurationChanged.self,
+            priority: .low
+        ) { _ in
+            DispatchQueue.main.async {
+                self.loadServers()
+                self.updateMountStatus()
+            }
+        }
+        eventTokens.append(configToken)
+        
+        let mountToken = EventBus.shared.subscribe(
+            to: MountCompleted.self,
+            priority: .low
+        ) { _ in
+            DispatchQueue.main.async {
+                self.updateMountStatus()
+            }
+        }
+        eventTokens.append(mountToken)
+        
+        let mountFailToken = EventBus.shared.subscribe(
+            to: MountFailed.self,
+            priority: .low
+        ) { _ in
+            DispatchQueue.main.async {
+                self.updateMountStatus()
+            }
+        }
+        eventTokens.append(mountFailToken)
+        
+        let unmountToken = EventBus.shared.subscribe(
+            to: UnmountCompleted.self,
+            priority: .low
+        ) { _ in
+            DispatchQueue.main.async {
+                self.updateMountStatus()
+            }
+        }
+        eventTokens.append(unmountToken)
+        
+        let unmountFailToken = EventBus.shared.subscribe(
+            to: UnmountFailed.self,
+            priority: .low
+        ) { _ in
+            DispatchQueue.main.async {
+                self.updateMountStatus()
+            }
+        }
+        eventTokens.append(unmountFailToken)
     }
     
     // MARK: - Toast 提示
@@ -703,7 +581,6 @@ struct ConnectionListView: View {
         }
     }
     
-    // 类型安全加载
     func loadServers() {
         servers = ConfigurationManager.shared.getServers()
     }
@@ -836,7 +713,13 @@ struct ConnectionListView: View {
         
         showToastMessage(message: "已导入 \(serversToImport.count) 个配置", isSuccess: true)
         
-        NotificationCenter.default.post(name: .ConfigurationChanged, object: nil)
+        EventBus.shared.publish(
+            ConfigurationChanged(
+                key: "servers",
+                oldValue: nil,
+                newValue: serversToImport
+            )
+        )
         loadServers()
         updateMountStatus()
     }

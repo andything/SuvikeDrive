@@ -8,14 +8,14 @@
 import AppKit
 import Foundation
 
-// ✅ ProtocolType 已在 ProtocolModule.swift 中定义，此处不再重复定义
+// ✅ ProtocolType 已在 ProtocolModule.swift 中定义
 
 // MARK: - 服务器配置
-struct ServerConfig: Codable {
+struct ServerConfig: Codable, Identifiable {
     // 基础标识
     let id: String
     var name: String
-    var protocolType: ProtocolType  // 使用 ProtocolModule.swift 中的定义
+    var protocolType: ProtocolType
     
     // 连接信息
     var url: String
@@ -149,13 +149,29 @@ struct ServerConfig: Codable {
         protocolConfig[key] = AnyCodable(value)
     }
     
+    /// ✅ 获取挂载路径 - 使用 SuvikeDrive 目录
     func getMountPath() -> String {
-        if let mountPath = mountPath, !mountPath.isEmpty {
-            return mountPath
+        if let customPath = mountPath, !customPath.isEmpty {
+            return customPath
         }
-        return "/Volumes/\(sanitizeName(name))"
+        // ✅ 使用 SuvikeDrive 目录
+        let home = NSHomeDirectory()
+        let suvikeDrivePath = "\(home)/SuvikeDrive"
+        
+        // 确保目录存在
+        if !FileManager.default.fileExists(atPath: suvikeDrivePath) {
+            try? FileManager.default.createDirectory(
+                atPath: suvikeDrivePath,
+                withIntermediateDirectories: true,
+                attributes: nil
+            )
+        }
+        
+        let sanitizedName = sanitizeName(name)
+        return "\(suvikeDrivePath)/\(sanitizedName)"
     }
     
+    /// ✅ 获取完整 URL（包含协议）
     func getFullURL() -> String {
         var fullURL = url.trimmingCharacters(in: .whitespaces)
         
@@ -182,20 +198,20 @@ struct ServerConfig: Codable {
         return url.host
     }
     
-    // MARK: - ✅ 修复：优先从 protocolConfig 读取端口
-    func getPort() -> Int? {
-        // ✅ 优先从 protocolConfig 读取
+    /// ✅ 获取端口
+    func getPort() -> Int {
+        // 首先检查 protocolConfig 中的 port
         if let port = protocolConfig["port"]?.value as? Int {
             return port
         }
         if let port = protocolConfig["port"]?.value as? String, let intPort = Int(port) {
             return intPort
         }
-        // ✅ 其次从 URL 解析（兼容旧数据）
+        // 然后检查 URL 中的端口
         if let url = URL(string: getFullURL()), let port = url.port {
             return port
         }
-        // ✅ 最后返回协议默认端口
+        // 默认端口
         return protocolType.defaultPort
     }
     
@@ -313,7 +329,7 @@ struct AnyCodable: Codable {
     }
 }
 
-// MARK: - 服务器配置扩展
+// MARK: - 字典转换
 extension ServerConfig {
     static func fromDictionary(_ dict: [String: Any]) -> ServerConfig {
         let id = dict["id"] as? String ?? UUID().uuidString

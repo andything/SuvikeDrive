@@ -60,7 +60,18 @@ class SFTPModule: ProtocolModule {
     }
     
     func getFileInfo(serverID: String, path: String) throws -> FileInfo {
-        return FileInfo(name: "", path: "", isDirectory: false, size: 0, modificationDate: Date(), permissions: "")
+        return FileInfo(
+            name: "",
+            path: "",
+            isDirectory: false,
+            size: 0,
+            modificationDate: Date(),
+            permissions: "",
+            owner: nil,
+            group: nil,
+            creationDate: nil,
+            lastAccessDate: nil
+        )
     }
     
     func createDirectory(serverID: String, path: String) throws {}

@@ -529,6 +529,16 @@ class TaskScheduler {
         }
         
         for serverID in mountedServers {
+            // ✅ 验证挂载状态
+            if let mountPath = MountManager.shared.getMountPath(serverID: serverID) {
+                if !DiskAPI.shared.isMounted(mountPath) {
+                    Logger.shared.debug("[\(serverID)] 挂载路径不存在，跳过心跳", module: "TaskScheduler")
+                    continue
+                }
+            } else {
+                continue
+            }
+            
             if let instance = MountManager.shared.getMountInstance(serverID: serverID) {
                 let module = ProtocolModuleManager.shared.getModule(type: instance.config.protocolType)
                 let success = module?.ping(serverID: serverID) ?? false
@@ -552,6 +562,16 @@ class TaskScheduler {
         let mountedServers = MountManager.shared.getMountedServers()
         
         for serverID in mountedServers {
+            // ✅ 验证挂载状态
+            if let mountPath = MountManager.shared.getMountPath(serverID: serverID) {
+                if !DiskAPI.shared.isMounted(mountPath) {
+                    Logger.shared.debug("[\(serverID)] 挂载路径不存在，跳过状态刷新", module: "TaskScheduler")
+                    continue
+                }
+            } else {
+                continue
+            }
+            
             if let instance = MountManager.shared.getMountInstance(serverID: serverID) {
                 let isConnected = DiskAPI.shared.isMounted(instance.mountPath)
                 if !isConnected {
@@ -633,9 +653,9 @@ class TaskScheduler {
     // 5. 缓存清理
     private func cleanupCache() {
         Logger.shared.debug("清理缓存")
-        let beforeSize = CacheManager.shared.getCacheSize()
+        let beforeSize = CacheManager.shared.totalCacheSize
         CacheManager.shared.cleanup()
-        let afterSize = CacheManager.shared.getCacheSize()
+        let afterSize = CacheManager.shared.totalCacheSize
         
         if beforeSize > afterSize {
             let freedSize = beforeSize - afterSize
@@ -658,6 +678,16 @@ class TaskScheduler {
         let mountedServers = MountManager.shared.getMountedServers()
         
         for serverID in mountedServers {
+            // ✅ 验证挂载状态
+            if let mountPath = MountManager.shared.getMountPath(serverID: serverID) {
+                if !DiskAPI.shared.isMounted(mountPath) {
+                    Logger.shared.debug("[\(serverID)] 挂载路径不存在，跳过重连", module: "TaskScheduler")
+                    continue
+                }
+            } else {
+                continue
+            }
+            
             if let instance = MountManager.shared.getMountInstance(serverID: serverID) {
                 if instance.state == .disconnected || instance.state == .error {
                     if instance.retryCount < maxRetries {
@@ -665,6 +695,12 @@ class TaskScheduler {
                         
                         let delay = TimeInterval((instance.retryCount + 1) * 5)
                         DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                            // ✅ 重连前再次检查挂载状态
+                            if !MountManager.shared.isMounted(serverID: serverID) {
+                                Logger.shared.info("[\(serverID)] 重连前检查：已卸载，跳过重连", module: "TaskScheduler")
+                                return
+                            }
+                            
                             MountManager.shared.mount(
                                 serverID: serverID,
                                 config: instance.config

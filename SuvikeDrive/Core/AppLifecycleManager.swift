@@ -3,6 +3,7 @@
 //  SuvikeDrive
 //
 //  功能: 应用生命周期管理
+//  通信: 系统通知保留，业务逻辑通过 EventBus
 //
 
 import Foundation
@@ -20,6 +21,9 @@ class AppLifecycleManager {
     private let heartbeatFilePath: String
     private let lockFilePath: String
     private var lockFileHandle: FileHandle?
+    
+    // MARK: - EventBus 订阅 Token
+    private var eventToken: SubscriptionToken?
     
     // MARK: - 静态信号处理
     private static let signalHandler: @convention(c) (Int32) -> Void = { signal in
@@ -57,6 +61,7 @@ class AppLifecycleManager {
         setupCrashHandler()
         startHeartbeat()
         registerLifecycleNotifications()
+        setupEventBusListener()
         
         Logger.shared.info("应用生命周期管理器启动成功")
         Logger.shared.info("进程ID: \(ProcessInfo.processInfo.processIdentifier)")
@@ -74,7 +79,24 @@ class AppLifecycleManager {
         try? FileManager.default.removeItem(atPath: heartbeatFilePath)
         releaseFileLock()
         
+        eventToken?.unsubscribe()
+        
         Logger.shared.info("应用生命周期管理器已停止")
+    }
+    
+    // MARK: - EventBus 事件监听
+    private func setupEventBusListener() {
+        // 监听应用退出请求（业务层可以通过 EventBus 触发退出）
+        eventToken = EventBus.shared.subscribe(
+            to: ConfigurationChanged.self,
+            priority: .low
+        ) { event in
+            if event.key == "app.terminate" {
+                DispatchQueue.main.async {
+                    NSApplication.shared.terminate(nil)
+                }
+            }
+        }
     }
     
     // MARK: - 单例检测
@@ -181,16 +203,30 @@ class AppLifecycleManager {
         let heartbeatData = "\(timestamp)\n\(pid)\n".data(using: .utf8)
         try? heartbeatData?.write(to: URL(fileURLWithPath: heartbeatFilePath))
         lastHeartbeat = Date()
-        // ✅ 只输出一次，减少日志
-        // print("💓 心跳: \(Date())")
     }
     
-    // MARK: - 生命周期通知
+    // MARK: - 生命周期通知（系统通知，保留）
     private func registerLifecycleNotifications() {
+        // ✅ 系统通知 - 保留
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(applicationWillTerminate),
             name: NSApplication.willTerminateNotification,
+            object: nil
+        )
+        
+        // ✅ 系统通知 - 保留（通过 NSWorkspace）
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self,
+            selector: #selector(systemWillSleep),
+            name: NSWorkspace.willSleepNotification,
+            object: nil
+        )
+        
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self,
+            selector: #selector(systemDidWake),
+            name: NSWorkspace.didWakeNotification,
             object: nil
         )
     }
@@ -198,5 +234,20 @@ class AppLifecycleManager {
     @objc private func applicationWillTerminate() {
         Logger.shared.info("应用即将退出")
         stop()
+    }
+    
+    @objc private func systemWillSleep() {
+        Logger.shared.info("系统即将休眠")
+        // 暂停心跳
+        heartbeatTimer?.invalidate()
+        heartbeatTimer = nil
+    }
+    
+    @objc private func systemDidWake() {
+        Logger.shared.info("系统已唤醒")
+        // 恢复心跳
+        if isRunning {
+            startHeartbeat()
+        }
     }
 }

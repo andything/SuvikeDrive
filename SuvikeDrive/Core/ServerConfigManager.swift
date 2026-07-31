@@ -52,7 +52,7 @@ class ServerConfigManager {
         let listToken = EventBus.shared.subscribe(
             to: LoadServerListRequest.self,
             priority: .medium
-        ) { [weak self] event in
+        ) { [weak self] _ in
             self?.handleLoadListRequest()
         }
         subscriptionTokens.append(listToken)
@@ -73,22 +73,26 @@ class ServerConfigManager {
         print("📋 [ServerConfigManager] 收到保存请求: isEditing=\(event.isEditing), serverID=\(event.serverID ?? "nil")")
         print("📋 [ServerConfigManager] config.url=\(event.config.url)")
         print("📋 [ServerConfigManager] config.protocolConfig=\(event.config.protocolConfig)")
-        print("📋 [ServerConfigManager] config.getPort()=\(String(describing: event.config.getPort()))")
+        
+        // ✅ 修复：安全获取端口值
+        let portValue = event.config.getPort()
+        print("📋 [ServerConfigManager] config.getPort()=\(String(describing: portValue))")
         
         DispatchQueue.global(qos: .userInitiated).async {
             var normalizedConfig = event.config
             
             // 标准化 URL（分离端口）
-            let (host, port) = self.extractHostAndPort(from: normalizedConfig.url)
+            let (host, extractedPort) = self.extractHostAndPort(from: normalizedConfig.url)
             if !host.isEmpty {
                 normalizedConfig.url = host
             }
-            if let port = port {
+            // ✅ 修复：使用 if let 安全解包提取的端口
+            if let port = extractedPort {
                 normalizedConfig.setProtocolConfig(key: "port", value: port)
             }
             
-            // 确保端口有值
-            if normalizedConfig.getPort() == nil {
+            // ✅ 修复：检查端口值，如果为 0 或 nil 则设置默认值
+            if normalizedConfig.getPort() == 0 {
                 normalizedConfig.setProtocolConfig(key: "port", value: normalizedConfig.protocolType.defaultPort)
             }
             
@@ -98,7 +102,6 @@ class ServerConfigManager {
             
             if event.isEditing, let id = event.serverID {
                 // ✅ 编辑模式：直接传入 normalizedConfig
-                // 注意：id 是 let 常量，不能修改，所以直接使用 normalizedConfig
                 self.configManager.updateServer(normalizedConfig)
                 success = true
                 print("✅ [ServerConfigManager] 更新服务器: id=\(id)")
@@ -117,7 +120,7 @@ class ServerConfigManager {
                 print("📋 [ServerConfigManager] 保存后验证: getPort()=\(String(describing: saved.getPort()))")
             }
             
-            // 发布保存结果
+            // ✅ 发布保存结果（纯 EventBus）
             DispatchQueue.main.async {
                 EventBus.shared.publish(
                     ServerConfigSaved(serverID: serverID, success: success, error: error)
@@ -129,8 +132,14 @@ class ServerConfigManager {
                     ServerListLoaded(servers: servers)
                 )
                 
-                // 发送通知（兼容旧代码）
-                NotificationCenter.default.post(name: .ConfigurationChanged, object: nil)
+                // ✅ 发布配置变更事件（替代 NotificationCenter）
+                EventBus.shared.publish(
+                    ConfigurationChanged(
+                        key: "servers",
+                        oldValue: nil,
+                        newValue: servers
+                    )
+                )
             }
         }
     }
@@ -185,7 +194,14 @@ class ServerConfigManager {
                     ServerListLoaded(servers: servers)
                 )
                 
-                NotificationCenter.default.post(name: .ConfigurationChanged, object: nil)
+                // ✅ 发布配置变更事件（替代 NotificationCenter）
+                EventBus.shared.publish(
+                    ConfigurationChanged(
+                        key: "servers",
+                        oldValue: nil,
+                        newValue: servers
+                    )
+                )
             }
         }
     }
@@ -196,7 +212,9 @@ class ServerConfigManager {
         
         let useHTTPS = config.getProtocolConfig(key: "https", defaultValue: true)
         let allowSelfSigned = config.getProtocolConfig(key: "selfSigned", defaultValue: false)
-        let port = config.getPort() ?? config.protocolType.defaultPort
+        
+        // ✅ 修复：getPort() 返回非可选 Int，直接使用
+        let port = config.getPort()
         
         NetworkManager.shared.testConnection(
             url: config.url,

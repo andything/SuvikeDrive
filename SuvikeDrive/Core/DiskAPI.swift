@@ -134,7 +134,11 @@ class DiskAPI {
                     isDirectory: type == .typeDirectory,
                     size: size,
                     modificationDate: modificationDate,
-                    permissions: self.getPermissions(fullPath)
+                    permissions: self.getPermissions(fullPath),
+                    owner: nil,
+                    group: nil,
+                    creationDate: nil,
+                    lastAccessDate: nil
                 )
                 files.append(fileInfo)
             }

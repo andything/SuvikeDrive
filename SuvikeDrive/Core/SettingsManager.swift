@@ -38,7 +38,7 @@ class SettingsManager {
         }
         subscriptionTokens.append(saveToken)
         
-        // ✅ 添加：监听 SettingsSaved 事件（避免死信队列）
+        // 监听 SettingsSaved 事件（避免死信队列）
         let savedToken = EventBus.shared.subscribe(
             to: SettingsSaved.self,
             priority: .low
@@ -134,11 +134,19 @@ class SettingsManager {
             }
             
             DispatchQueue.main.async {
+                // ✅ 发布设置保存结果
                 EventBus.shared.publish(
                     SettingsSaved(success: success, error: error)
                 )
                 
-                NotificationCenter.default.post(name: .ConfigurationChanged, object: nil)
+                // ✅ 发布配置变更事件（替代 NotificationCenter）
+                EventBus.shared.publish(
+                    ConfigurationChanged(
+                        key: "settings",
+                        oldValue: nil,
+                        newValue: settings
+                    )
+                )
             }
         }
     }

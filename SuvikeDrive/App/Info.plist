@@ -7,5 +7,9 @@
 		<string>zh</string>
 		<string>en</string>
 	</array>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0.1</string>
+	<key>CFBundleVersion</key>
+	<string>20260801</string>
 </dict>
 </plist>

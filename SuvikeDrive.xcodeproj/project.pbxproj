@@ -11,21 +11,26 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		F2817F47300BF55500D2B210 /* Exceptions for "SuvikeDrive" folder in "SuvikeDrive" target */ = {
+		F23C8EF9301D294A00C8E6D9 /* Exceptions for "Resources" folder in "SuvikeDrive" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
-				App/Info.plist,
+				README.md,
 			);
 			target = F2817E97300BF14A00D2B210 /* SuvikeDrive */;
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		F2817E9A300BF14A00D2B210 /* SuvikeDrive */ = {
+		F23C8EF6301D292A00C8E6D9 /* Resources */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				F2817F47300BF55500D2B210 /* Exceptions for "SuvikeDrive" folder in "SuvikeDrive" target */,
+				F23C8EF9301D294A00C8E6D9 /* Exceptions for "Resources" folder in "SuvikeDrive" target */,
 			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		F2817E9A300BF14A00D2B210 /* SuvikeDrive */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
 			path = SuvikeDrive;
 			sourceTree = "<group>";
 		};
@@ -43,6 +48,7 @@
 		F2817E8F300BF14A00D2B210 = {
 			isa = PBXGroup;
 			children = (
+				F23C8EF6301D292A00C8E6D9 /* Resources */,
 				F2817E9A300BF14A00D2B210 /* SuvikeDrive */,
 				F2817E99300BF14A00D2B210 /* Products */,
 			);
@@ -70,6 +76,7 @@
 			buildRules = (
 			);
 			fileSystemSynchronizedGroups = (
+				F23C8EF6301D292A00C8E6D9 /* Resources */,
 				F2817E9A300BF14A00D2B210 /* SuvikeDrive */,
 			);
 			name = SuvikeDrive;
@@ -256,7 +263,7 @@
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 20260720;
+				CURRENT_PROJECT_VERSION = 20260801;
 				DEVELOPMENT_TEAM = 5Y6P64X6F5;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -270,7 +277,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.0.0;
+				MARKETING_VERSION = 1.0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.andything.SuvikeDrive;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
@@ -280,6 +287,7 @@
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
+				SYMROOT = /Users/andything/XcodeOut/Release;
 			};
 			name = Debug;
 		};
@@ -291,7 +299,7 @@
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 20260720;
+				CURRENT_PROJECT_VERSION = 20260801;
 				DEVELOPMENT_TEAM = 5Y6P64X6F5;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -305,7 +313,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.0.0;
+				MARKETING_VERSION = 1.0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.andything.SuvikeDrive;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
@@ -315,6 +323,7 @@
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
+				SYMROOT = /Users/andything/XcodeOut/Release;
 			};
 			name = Release;
 		};

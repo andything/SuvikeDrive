@@ -5,6 +5,7 @@
 //  模块功能：HTTP请求业务服务
 //  职责：封装通用GET/POST、JSON请求、文件上传下载、自动重试、并发队列限流
 //        管理上传/下载进度监听，统一错误映射
+//        新增：流量统计（入站/出站字节数）
 //  依赖：Foundation、Combine、NetworkSessionService、NetworkTypes
 //
 
@@ -21,8 +22,21 @@ final class NetworkRequestService {
     private var pendingRequests: [(URLRequest, (Data?, URLResponse?, Error?) -> Void)] = []
     private var maxRetries: Int = 3
     
+    // ✅ 核心修复：增加一个专用的串行队列，来保护下载和上传的观察者字典
+    private let observationQueue = DispatchQueue(label: "com.suvikedrive.network.observation")
+    
     private var downloadObservations: [Int: NSKeyValueObservation] = [:]
     private var uploadObservations: [Int: NSKeyValueObservation] = [:]
+    
+    // MARK: - 流量统计
+    private(set) var totalBytesIn: Int64 = 0
+    private(set) var totalBytesOut: Int64 = 0
+    private var trafficLock = NSLock()
+    private var trafficRecords: [TrafficRecord] = []
+    private let maxTrafficRecords = 1000
+    
+    // 流量更新回调（主线程）
+    var onTrafficUpdate: ((_ bytesIn: Int64, _ bytesOut: Int64) -> Void)?
     
     private init() {}
     
@@ -107,6 +121,7 @@ final class NetworkRequestService {
     }
     
     // MARK: 文件下载
+    
     func download(
         url: URL,
         destination: URL,
@@ -134,14 +149,22 @@ final class NetworkRequestService {
             }
         }
         
-        let obs = task.progress.observe(\.fractionCompleted) { p, _ in
-            DispatchQueue.main.async { progress(p.fractionCompleted) }
+        let obs = task.progress.observe(\.fractionCompleted, options: [.new]) { p, change in
+            let fraction = change.newValue ?? p.fractionCompleted
+            DispatchQueue.main.async {
+                progress(fraction)
+            }
         }
         task.resume()
-        downloadObservations[task.taskIdentifier] = obs
+        
+        // ✅ 核心修复：使用串行队列保护字典写入，防止多线程并发导致 EXC_BAD_ACCESS
+        observationQueue.sync {
+            downloadObservations[task.taskIdentifier] = obs
+        }
     }
     
     // MARK: 文件上传
+    
     func upload(
         url: URL,
         file: URL,
@@ -166,11 +189,75 @@ final class NetworkRequestService {
             completion(.success(data))
         }
         
-        let obs = task.progress.observe(\.fractionCompleted) { p, _ in
-            DispatchQueue.main.async { progress(p.fractionCompleted) }
+        let obs = task.progress.observe(\.fractionCompleted, options: [.new]) { p, change in
+            let fraction = change.newValue ?? p.fractionCompleted
+            DispatchQueue.main.async {
+                progress(fraction)
+            }
         }
         task.resume()
-        uploadObservations[task.taskIdentifier] = obs
+        
+        // ✅ 核心修复：使用串行队列保护字典写入，防止多线程并发导致 EXC_BAD_ACCESS
+        observationQueue.sync {
+            uploadObservations[task.taskIdentifier] = obs
+        }
+    }
+    
+    // MARK: - 清理与取消（可选）
+    func cancelDownload(taskIdentifier: Int) {
+        // 加上 _ =
+        _ = observationQueue.sync {
+            downloadObservations.removeValue(forKey: taskIdentifier)
+        }
+    }
+    
+    func cancelUpload(taskIdentifier: Int) {
+        // 加上 _ =
+        _ = observationQueue.sync {
+            uploadObservations.removeValue(forKey: taskIdentifier)
+        }
+    }
+    
+    // MARK: - 流量统计
+    
+    private func recordTraffic(bytesIn: Int64, bytesOut: Int64, success: Bool = true, error: String? = nil) {
+        trafficLock.lock()
+        defer { trafficLock.unlock() }
+        
+        totalBytesIn += bytesIn
+        totalBytesOut += bytesOut
+        
+        let record = TrafficRecord(
+            timestamp: Date(),
+            url: "",
+            bytesIn: bytesIn,
+            bytesOut: bytesOut,
+            duration: 0,
+            success: success,
+            error: error
+        )
+        trafficRecords.append(record)
+        if trafficRecords.count > maxTrafficRecords {
+            trafficRecords.removeFirst()
+        }
+        
+        DispatchQueue.main.async {
+            self.onTrafficUpdate?(self.totalBytesIn, self.totalBytesOut)
+        }
+    }
+    
+    func getTrafficStats() -> (bytesIn: Int64, bytesOut: Int64, records: [TrafficRecord]) {
+        trafficLock.lock()
+        defer { trafficLock.unlock() }
+        return (totalBytesIn, totalBytesOut, trafficRecords)
+    }
+    
+    func resetTrafficStats() {
+        trafficLock.lock()
+        defer { trafficLock.unlock() }
+        totalBytesIn = 0
+        totalBytesOut = 0
+        trafficRecords.removeAll()
     }
     
     // MARK: 内部重试调度
@@ -235,20 +322,33 @@ final class NetworkRequestService {
         _ request: URLRequest,
         completion: @escaping (Result<Data, NetworkError>) -> Void
     ) {
+        let requestBodySize = request.httpBody?.count ?? 0
+        
+        if requestBodySize > 0 {
+            recordTraffic(bytesIn: 0, bytesOut: Int64(requestBodySize))
+        }
+        
         let task = sessionService.session.dataTask(with: request) { data, resp, err in
             self.requestQueue.async {
                 self.activeRequests -= 1
                 self.processNextPendingRequest()
             }
+            
             if let err = err {
                 let netErr = self.mapError(err, response: resp)
+                self.recordTraffic(bytesIn: 0, bytesOut: 0, success: false, error: netErr.localizedDescription)
                 DispatchQueue.main.async { completion(.failure(netErr)) }
                 return
             }
+            
             guard let httpResp = resp as? HTTPURLResponse else {
                 DispatchQueue.main.async { completion(.failure(.invalidResponse)) }
                 return
             }
+            
+            let responseSize = data?.count ?? 0
+            self.recordTraffic(bytesIn: Int64(responseSize), bytesOut: 0)
+            
             guard (200...299).contains(httpResp.statusCode) else {
                 let msg = String(data: data ?? Data(), encoding: .utf8) ?? "HTTP错误"
                 DispatchQueue.main.async {
@@ -256,6 +356,7 @@ final class NetworkRequestService {
                 }
                 return
             }
+            
             DispatchQueue.main.async { completion(.success(data ?? Data())) }
         }
         task.resume()

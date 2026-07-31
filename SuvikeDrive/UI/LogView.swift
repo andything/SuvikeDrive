@@ -2,10 +2,7 @@
 //  LogView.swift
 //  SuvikeDrive
 //
-//  功能:  日志查看窗口（纯 UI）
-//        筛选功能保留在 UI 层
-//        日志读取/清空/导出由主程序处理
-//        通过通知接收日志更新
+//  功能:  日志查看窗口（纯 UI，通过 EventBus 接收数据）
 //
 
 import SwiftUI
@@ -47,7 +44,6 @@ struct NativeLogView: NSViewRepresentable {
         
         if textView.string != text {
             textView.string = text
-            // ✅ 滚动到顶部，但保持用户滚动位置选项
             if context.coordinator.shouldAutoScroll {
                 nsView.contentView.scroll(to: .zero)
             }
@@ -130,7 +126,7 @@ struct LogDivider: View {
     }
 }
 
-// MARK: - LogView（纯 UI）
+// MARK: - LogView（纯 UI，通过 LogManager 接收数据）
 struct LogView: View {
     // MARK: - UI State
     @State private var logContent: String = ""
@@ -144,16 +140,13 @@ struct LogView: View {
     @State private var isExporting: Bool = false
     @Environment(\.dismiss) var dismiss
     
-    // MARK: - 主程序回调
-    var onLoadLogs: (() -> String?)?
-    var onClearLogs: (() -> Void)?
-    var onExportLogs: (() -> Bool?)?
-    var onGetLogPath: (() -> String)?
+    // MARK: - 状态管理
+    @State private var isLogLoading: Bool = false
     
     // MARK: - 日志级别关键词
     private let levelKeywords = ["INFO", "ERROR", "WARNING", "DEBUG", "CRASH"]
     
-    // MARK: - 筛选（纯 UI 计算，保留）
+    // MARK: - 筛选（纯 UI 计算）
     private var filteredLog: String {
         if filter.isEmpty {
             return logContent
@@ -190,13 +183,9 @@ struct LogView: View {
     
     var body: some View {
         VStack(spacing: 0) {
-            // MARK: - 标题栏
+            // MARK: - 工具栏（移除了标题）
             HStack {
-                Text("活动日志")
-                    .font(.title2)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.primary)
-                
+                // 左侧留空，或者可以放一些状态信息
                 Spacer()
                 
                 HStack(spacing: 12) {
@@ -206,19 +195,32 @@ struct LogView: View {
                             .foregroundColor(.blue)
                     }
                     
-                    Toggle("自动更新", isOn: $autoRefresh)
-                        .toggleStyle(.switch)
-                        .controlSize(.small)
-                        .fixedSize()
+                    Toggle("自动更新", isOn: Binding(
+                        get: { self.autoRefresh },
+                        set: { newValue in
+                            self.autoRefresh = newValue
+                            if newValue {
+                                self.requestRefresh()
+                                Logger.shared.onLogFileUpdated = {
+                                    self.requestRefresh()
+                                }
+                            } else {
+                                Logger.shared.onLogFileUpdated = nil
+                            }
+                        }
+                    ))
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+                    .fixedSize()
                     
                     LogCapsuleIconButton(
                         icon: "arrow.clockwise",
                         action: {
+                            print("🟢 [按钮] 点击了刷新按钮！准备发送请求...")
+                            
                             isRefreshing = true
-                            loadLogs()
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                                isRefreshing = false
-                            }
+                            requestRefresh()
+                            isRefreshing = false
                         },
                         help: "刷新日志"
                     )
@@ -229,7 +231,7 @@ struct LogView: View {
                     
                     LogCapsuleIconButton(
                         icon: "square.and.arrow.up",
-                        action: { exportLogs() },
+                        action: { requestExport() },
                         help: "导出日志"
                     )
                     .disabled(isExporting)
@@ -243,7 +245,7 @@ struct LogView: View {
                     
                     LogCapsuleIconButton(
                         icon: "trash",
-                        action: { clearLogs() },
+                        action: { requestClear() },
                         color: .red,
                         help: "清空日志"
                     )
@@ -252,8 +254,8 @@ struct LogView: View {
                 }
             }
             .padding(.horizontal, 24)
-            .padding(.vertical, 14)
-            .frame(height: 52)
+            .padding(.vertical, 10)
+            .frame(minHeight: 44)
             
             LogDivider()
             
@@ -278,13 +280,18 @@ struct LogView: View {
             .background(Color(NSColor.controlBackgroundColor))
             .cornerRadius(8)
             .padding(.horizontal, 24)
-            .padding(.vertical, 12)
-            .frame(height: 56)
+            .padding(.vertical, 10)
+            .frame(minHeight: 48)
             
             LogDivider()
             
             // MARK: - 日志内容
-            if filteredLog.isEmpty {
+            let displayContent = filter.isEmpty ? logContent : logContent
+                .components(separatedBy: .newlines)
+                .filter { $0.localizedCaseInsensitiveContains(filter) }
+                .joined(separator: "\n")
+            
+            if displayContent.isEmpty {
                 VStack(spacing: 12) {
                     Image(systemName: "doc.text.magnifyingglass")
                         .font(.largeTitle)
@@ -301,10 +308,10 @@ struct LogView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Color(NSColor.controlBackgroundColor).opacity(0.3))
             } else {
-                NativeLogView(text: .constant(filteredLog))
+                NativeLogView(text: .constant(displayContent))
                     .background(Color(NSColor.controlBackgroundColor).opacity(0.3))
                     .padding(.horizontal, 0)
-                    .padding(.vertical, 8)
+                    .padding(.vertical, 6)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             
@@ -355,37 +362,57 @@ struct LogView: View {
                 }
             }
             .padding(.horizontal, 24)
-            .padding(.vertical, 8)
-            .frame(height: 32)
+            .padding(.vertical, 6)
+            .frame(minHeight: 28)
         }
-        .frame(width: 700, height: 500)
+        .frame(minWidth: 500, minHeight: 300)  // 设置最小尺寸
         .background(Color(NSColor.windowBackgroundColor))
         .onAppear {
-            loadLogs()
-            loadLogPath()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .logFileUpdated)) { _ in
-            if autoRefresh {
-                loadLogs()
+            requestRefresh()
+            LogManager.shared.onLogContentReceived = { content in
+                let wasFiltering = !self.filter.isEmpty
+                
+                self.logContent = content
+                if wasFiltering {
+                    self.filter = ""
+                    self.filter = " "
+                }
+                
+                print("📢 [LogView] 内容已更新，长度: \(content.count)")
+            }
+            
+            requestLogPath()
+            
+            Logger.shared.onLogFileUpdated = {
+                if autoRefresh {
+                    requestRefresh()
+                }
             }
         }
         .onDisappear {
-            // 清理
+            LogManager.shared.onLogContentReceived = nil
+            Logger.shared.onLogFileUpdated = nil
         }
     }
     
-    // MARK: - 加载日志（调用主程序）
-    private func loadLogs() {
-        guard let content = onLoadLogs?() else {
-            logContent = "暂无日志"
-            return
-        }
-        logContent = content
+    // MARK: - 事件发送
+    private func requestRefresh() {
+        guard !isLogLoading else { return }
+        isLogLoading = true
+        print("📢 [LogView] 准备发送 LogRefreshRequested...")
+        EventBus.shared.publish(LogRefreshRequested())
     }
     
-    // MARK: - 加载日志路径（调用主程序）
-    private func loadLogPath() {
-        logPath = onGetLogPath?() ?? ""
+    private func requestClear() {
+        EventBus.shared.publish(LogClearRequested())
+    }
+    
+    private func requestExport() {
+        EventBus.shared.publish(LogExportRequested())
+    }
+    
+    private func requestLogPath() {
+        EventBus.shared.publish(LogPathRequested())
     }
     
     // MARK: - Toast 提示
@@ -402,39 +429,10 @@ struct LogView: View {
             }
         }
     }
-    
-    // MARK: - 清空日志
-    private func clearLogs() {
-        // ✅ 调用主程序清除日志文件
-        onClearLogs?()
-        
-        // 同时清空 UI 显示
-        logContent = ""
-        showToastMessage(message: "日志已清除", isSuccess: true)
-    }
-    
-    // MARK: - 导出日志（带加载状态）
-    private func exportLogs() {
-        guard !isExporting else { return }
-        
-        isExporting = true
-        
-        DispatchQueue.global(qos: .userInitiated).async {
-            let result = onExportLogs?()
-            
-            DispatchQueue.main.async {
-                isExporting = false
-                if result == true {
-                    showToastMessage(message: "日志导出成功", isSuccess: true)
-                } else {
-                    showToastMessage(message: "导出失败", isSuccess: false)
-                }
-            }
-        }
-    }
 }
 
 // MARK: - 预览
 #Preview {
     LogView()
+        .frame(width: 800, height: 600)  // 预览时给一个较大的尺寸
 }

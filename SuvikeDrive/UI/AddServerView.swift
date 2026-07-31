@@ -2,13 +2,13 @@
 //  AddServerView.swift
 //  SuvikeDrive
 //
-//  功能: 添加/编辑服务器 UI（纯 UI，所有逻辑通过 EventBus 通信）
+//  功能: 添加/编辑服务器 UI
 //
 
 import SwiftUI
 import AppKit
 
-// MARK: - 左对齐文本框（修复循环更新问题）
+// MARK: - 左对齐文本框
 struct LeftAlignedTextField: NSViewRepresentable {
     @Binding var text: String
     let placeholder: String
@@ -26,7 +26,6 @@ struct LeftAlignedTextField: NSViewRepresentable {
     }
     
     func updateNSView(_ nsView: NSTextField, context: Context) {
-        // ✅ 只在值真正变化时才更新，避免不必要的触发
         if nsView.stringValue != text {
             nsView.stringValue = text
         }
@@ -38,7 +37,7 @@ struct LeftAlignedTextField: NSViewRepresentable {
     
     class Coordinator: NSObject, NSTextFieldDelegate {
         var parent: LeftAlignedTextField
-        private var isUpdating = false  // ✅ 防止循环更新
+        private var isUpdating = false
         
         init(_ parent: LeftAlignedTextField) {
             self.parent = parent
@@ -58,7 +57,7 @@ struct LeftAlignedTextField: NSViewRepresentable {
     }
 }
 
-// MARK: - 安全文本框（修复循环更新问题）
+// MARK: - 安全文本框（修复版 - 实时绑定）
 struct LeftAlignedSecureField: NSViewRepresentable {
     @Binding var text: String
     let placeholder: String
@@ -87,17 +86,12 @@ struct LeftAlignedSecureField: NSViewRepresentable {
     
     class Coordinator: NSObject, NSTextFieldDelegate {
         var parent: LeftAlignedSecureField
-        private var isUpdating = false  // ✅ 防止循环更新
         
         init(_ parent: LeftAlignedSecureField) {
             self.parent = parent
         }
         
         func controlTextDidChange(_ obj: Notification) {
-            guard !isUpdating else { return }
-            isUpdating = true
-            defer { isUpdating = false }
-            
             if let textField = obj.object as? NSTextField {
                 DispatchQueue.main.async {
                     self.parent.text = textField.stringValue
@@ -133,7 +127,7 @@ struct CapsuleButtonStyle: ButtonStyle {
     }
 }
 
-// MARK: - 端口输入子视图（完全修复版）
+// MARK: - 端口输入子视图
 struct PortInputView: View {
     @Binding var config: ServerConfig
     @State private var textValue: String = ""
@@ -147,13 +141,13 @@ struct PortInputView: View {
         )
         .onAppear {
             updateTextValue()
-            lastKnownPort = config.getPort()
+            lastKnownPort = getCustomPort()
         }
         .onChange(of: config.protocolType) { _, _ in
             updateTextValue()
         }
         .onChange(of: config) { _, _ in
-            let currentPort = config.getPort()
+            let currentPort = getCustomPort()
             if lastKnownPort != currentPort {
                 lastKnownPort = currentPort
                 updateTextValue()
@@ -180,13 +174,19 @@ struct PortInputView: View {
         }
     }
     
+    /// 获取用户手动设置的自定义端口（nil = 使用默认端口）
+    private func getCustomPort() -> Int? {
+        return config.protocolConfig["port"]?.value as? Int
+    }
+    
     private func updateTextValue() {
         guard !isUpdating else { return }
         isUpdating = true
         defer { isUpdating = false }
         
+        let customPort = getCustomPort()
         let newValue: String
-        if let storedPort = config.getPort() {
+        if let storedPort = customPort {
             if storedPort == config.protocolType.defaultPort {
                 newValue = ""
             } else {
@@ -198,29 +198,28 @@ struct PortInputView: View {
         if textValue != newValue {
             textValue = newValue
         }
-        lastKnownPort = config.getPort()
+        lastKnownPort = customPort
     }
 }
 
-// MARK: - 主视图（完美修复版）
+// MARK: - 主视图
 struct AddServerView: View {
     @Environment(\.dismiss) var dismiss
     
     let serverID: String?
     let isEditing: Bool
     
-    // MARK: - UI State
     @State private var config: ServerConfig
     @State private var showPassword: Bool = false
     @State private var isConnecting: Bool = false
     @State private var connectionError: String?
     @State private var showTestResult = false
     @State private var testResult: NetworkTestResult?
+    @State private var isSaving = false
+    @State private var passwordInput: String = ""
     
-    // MARK: - 订阅 Token
     @State private var subscriptionTokens: [SubscriptionToken] = []
     
-    // MARK: - 初始化
     init(serverID: String? = nil, isEditing: Bool = false) {
         self.serverID = serverID
         self.isEditing = isEditing
@@ -247,16 +246,11 @@ struct AddServerView: View {
         VStack(spacing: 0) {
             // 标题栏
             HStack {
-                Text(isEditing ? "编辑连接" : "新驱动器")
+                Text(isEditing ? "编辑连接" : "新建连接")
                     .font(.title2)
                     .fontWeight(.semibold)
+                    .foregroundColor(.primary)
                 Spacer()
-                Button(action: { dismiss() }) {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.title2)
-                        .foregroundColor(.secondary)
-                }
-                .buttonStyle(.plain)
             }
             .padding(.horizontal, 24)
             .padding(.vertical, 16)
@@ -267,7 +261,6 @@ struct AddServerView: View {
             ScrollView {
                 Form {
                     Section {
-                        // 名称
                         HStack {
                             Text("名称")
                                 .font(.body)
@@ -277,7 +270,6 @@ struct AddServerView: View {
                         }
                         .frame(height: 32)
                         
-                        // 协议
                         HStack {
                             Text("协议")
                                 .font(.body)
@@ -307,7 +299,6 @@ struct AddServerView: View {
                         }
                         .frame(height: 32)
                         
-                        // 用户名
                         HStack {
                             Text("用户")
                                 .font(.body)
@@ -323,7 +314,7 @@ struct AddServerView: View {
                         }
                         .frame(height: 32)
                         
-                        // 密码
+                        // ✅ 密码字段
                         HStack {
                             Text("密码")
                                 .font(.body)
@@ -332,22 +323,25 @@ struct AddServerView: View {
                             HStack(spacing: 4) {
                                 if showPassword {
                                     LeftAlignedTextField(
-                                        text: Binding(
-                                            get: { config.password ?? "" },
-                                            set: { config.password = $0.isEmpty ? nil : $0 }
-                                        ),
+                                        text: $passwordInput,
                                         placeholder: "请输入密码"
                                     )
+                                    .onChange(of: passwordInput) { _, newValue in
+                                        config.password = newValue.isEmpty ? nil : newValue
+                                    }
                                 } else {
                                     LeftAlignedSecureField(
-                                        text: Binding(
-                                            get: { config.password ?? "" },
-                                            set: { config.password = $0.isEmpty ? nil : $0 }
-                                        ),
+                                        text: $passwordInput,
                                         placeholder: "请输入密码"
                                     )
+                                    .onChange(of: passwordInput) { _, newValue in
+                                        config.password = newValue.isEmpty ? nil : newValue
+                                    }
                                 }
-                                Button(action: { showPassword.toggle() }) {
+                                Button(action: {
+                                    showPassword.toggle()
+                                    passwordInput = config.password ?? ""
+                                }) {
                                     Image(systemName: showPassword ? "eye.slash" : "eye")
                                         .foregroundColor(.secondary)
                                         .frame(width: 20)
@@ -357,7 +351,6 @@ struct AddServerView: View {
                         }
                         .frame(height: 32)
                         
-                        // 远程路径
                         HStack {
                             Text("远程路径")
                                 .font(.body)
@@ -456,7 +449,6 @@ struct AddServerView: View {
                 .padding(.horizontal, 0)
             }
             
-            // 错误信息
             if let error = connectionError {
                 HStack {
                     Image(systemName: "exclamationmark.triangle.fill")
@@ -478,7 +470,7 @@ struct AddServerView: View {
             }
             
             Divider()
-            
+
             // 底部按钮
             HStack {
                 Button("取消") {
@@ -506,10 +498,11 @@ struct AddServerView: View {
                 .disabled(isConnecting || config.name.isEmpty || config.url.isEmpty)
                 
                 Button(isEditing ? "保存" : "保存并挂载") {
+                    print("🔥🔥🔥 保存按钮被点击！")
                     saveConnection()
                 }
                 .buttonStyle(CapsuleButtonStyle(color: .accentColor, isProminent: true))
-                .disabled(isConnecting || config.name.isEmpty || config.url.isEmpty)
+                .disabled(isSaving || isConnecting || config.name.isEmpty || config.url.isEmpty)
             }
             .padding(.horizontal, 24)
             .padding(.vertical, 12)
@@ -522,6 +515,7 @@ struct AddServerView: View {
             )
         }
         .onAppear {
+            passwordInput = config.password ?? ""
             setupEventListeners()
             if isEditing, let id = serverID {
                 EventBus.shared.publish(LoadServerConfigRequest(serverID: id))
@@ -542,10 +536,8 @@ struct AddServerView: View {
         ) { event in
             guard event.serverID == self.serverID else { return }
             DispatchQueue.main.async {
-                // ✅ 更新 config
                 self.config = event.config
-                
-                // ✅ 解析 URL 中的主机和端口
+                self.passwordInput = self.config.password ?? ""
                 let (host, port) = self.extractHostAndPort(from: self.config.url)
                 if !host.isEmpty && host != self.config.url {
                     self.config.url = host
@@ -553,23 +545,19 @@ struct AddServerView: View {
                 if let port = port {
                     self.config.setProtocolConfig(key: "port", value: port)
                 }
-                
-                // ✅ PortInputView 会通过 onChange(of: config) 自动刷新
-                // 不需要 self.config = self.config
             }
         }
         subscriptionTokens.append(loadToken)
         
-        // 监听保存结果
+        // ✅ 监听保存结果
         let saveToken = EventBus.shared.subscribe(
             to: ServerConfigSaved.self,
-            priority: .medium
+            priority: .high
         ) { event in
             DispatchQueue.main.async {
+                print("📋 [AddServerView] 收到 ServerConfigSaved: success=\(event.success), serverID=\(event.serverID)")
+                self.isSaving = false
                 if event.success {
-                    if let id = self.serverID {
-                        EventBus.shared.publish(LoadServerConfigRequest(serverID: id))
-                    }
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                         self.dismiss()
                     }
@@ -594,31 +582,48 @@ struct AddServerView: View {
         subscriptionTokens.append(testToken)
     }
     
-    // MARK: - 保存连接（通过 EventBus）
+    // MARK: - 保存连接
     private func saveConnection() {
+        print("📋 [AddServerView] saveConnection 被调用")
+        print("  - serverID: \(serverID ?? "nil")")
+        print("  - isEditing: \(isEditing)")
+        print("  - config.name: \(config.name)")
+        print("  - config.url: \(config.url)")
+        print("  - config.protocolType: \(config.protocolType)")
+        
+        isSaving = true
+        connectionError = nil
+        
         var normalizedConfig = config
         
-        // ✅ 解析并标准化 URL
-        let (host, port) = extractHostAndPort(from: normalizedConfig.url)
+        // 解析并标准化 URL
+        let (host, extractedPort) = extractHostAndPort(from: normalizedConfig.url)
         if !host.isEmpty {
             normalizedConfig.url = host
         }
-        if let port = port {
-            normalizedConfig.setProtocolConfig(key: "port", value: port)
+
+        // 先处理提取出来的端口
+        if let extractedPort = extractedPort {
+            normalizedConfig.setProtocolConfig(key: "port", value: extractedPort)
         }
-        if normalizedConfig.getPort() == nil {
+
+        // 获取当前已设置端口（非可选Int）
+        let currentPort = normalizedConfig.getPort()
+        // 判断：端口为0/无效值时填充默认端口（根据WebDAV常规逻辑）
+        if currentPort <= 0 {
             normalizedConfig.setProtocolConfig(key: "port", value: normalizedConfig.protocolType.defaultPort)
         }
-        
-        // ✅ 同步更新 UI config，保持一致性
+
+        // 同步回原始 config
         config.url = normalizedConfig.url
-        if let port = port {
-            config.setProtocolConfig(key: "port", value: port)
-        } else if normalizedConfig.getPort() != nil {
-            // 使用默认端口时也同步
+        if let extractedPort = extractedPort {
+            config.setProtocolConfig(key: "port", value: extractedPort)
+        } else {
+            // 直接读取已经补全端口的 normalizedConfig
             config.setProtocolConfig(key: "port", value: normalizedConfig.getPort())
         }
         
+        // ✅ 发送保存请求
         EventBus.shared.publish(
             SaveServerConfigRequest(
                 serverID: serverID,
@@ -626,9 +631,10 @@ struct AddServerView: View {
                 config: normalizedConfig
             )
         )
+        print("📋 [AddServerView] 已发送 SaveServerConfigRequest")
     }
     
-    // MARK: - 测试连接（通过 EventBus）
+    // MARK: - 测试连接
     private func testConnection() {
         guard !config.url.isEmpty else {
             connectionError = "请输入地址"
@@ -643,7 +649,7 @@ struct AddServerView: View {
         )
     }
     
-    // MARK: - 辅助方法：提取主机名和端口
+    // MARK: - 辅助方法
     private func extractHostAndPort(from urlString: String) -> (host: String, port: Int?) {
         var raw = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
         
@@ -655,7 +661,6 @@ struct AddServerView: View {
             }
         }
         
-        // IPv6 地址: [::1]:8080
         if raw.hasPrefix("[") {
             if let closeBracketIndex = raw.firstIndex(of: "]") {
                 let ipv6Part = String(raw[...closeBracketIndex])
@@ -670,7 +675,6 @@ struct AddServerView: View {
             }
         }
         
-        // 域名/IPv4: host:port
         if let colonIndex = raw.lastIndex(of: ":") {
             let prefix = String(raw[..<colonIndex])
             if !prefix.contains(":") {

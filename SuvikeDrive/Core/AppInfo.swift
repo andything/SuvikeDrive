@@ -11,7 +11,7 @@ import Foundation
 struct AppInfo {
     // MARK: - 应用信息
     static let appName = "SuvikeDrive"
-    static let appDescription = "远程磁盘挂载工具"
+    static let appDescription = "远程磁盘同步助手"
     
     // MARK: - 版本信息
     static var appVersion: String {
@@ -66,7 +66,7 @@ struct AppInfo {
     
     // MARK: - 更新相关 URL
     /// 版本检查地址（GitHub raw）
-    static let updateVersionURL = "https://raw.githubusercontent.com/andything/WebDavMounter/main/version.json"
+    static let updateVersionURL = "https://raw.githubusercontent.com/andything/SuvikeDrive/main/version.json"
     
     /// 备用版本检查地址（如果 GitHub 无法访问）
     static let fallbackUpdateVersionURL = "https://api.suvikedrive.com/version"

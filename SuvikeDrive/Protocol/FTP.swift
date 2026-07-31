@@ -148,7 +148,11 @@ class FTPModule: ProtocolModule {
                     isDirectory: file.isDirectory,
                     size: file.size,
                     modificationDate: file.modificationDate,
-                    permissions: file.permissions
+                    permissions: file.permissions,
+                    owner: nil,
+                    group: nil,
+                    creationDate: nil,
+                    lastAccessDate: nil
                 )
             }
             CacheManager.shared.setFileList(key: key, files: fileInfos)
@@ -156,20 +160,24 @@ class FTPModule: ProtocolModule {
         case .failure(let error):
             throw ProtocolError.connectionFailed(error.localizedDescription)
         }
-    }
-    
-    func getFileInfo(serverID: String, path: String) throws -> FileInfo {
-        let files = try listFiles(serverID: serverID, path: Utils.shared.normalizePath(path))
-        let fileName = (path as NSString).lastPathComponent
-        return files.first { $0.name == fileName } ?? FileInfo(
-            name: fileName,
-            path: path,
-            isDirectory: false,
-            size: 0,
-            modificationDate: Date(),
-            permissions: "rw-"
-        )
-    }
+        }
+
+        func getFileInfo(serverID: String, path: String) throws -> FileInfo {
+            let files = try listFiles(serverID: serverID, path: Utils.shared.normalizePath(path))
+            let fileName = (path as NSString).lastPathComponent
+            return files.first { $0.name == fileName } ?? FileInfo(
+                name: fileName,
+                path: path,
+                isDirectory: false,
+                size: 0,
+                modificationDate: Date(),
+                permissions: "rw-",
+                owner: nil,
+                group: nil,
+                creationDate: nil,
+                lastAccessDate: nil
+            )
+        }
     
     func createDirectory(serverID: String, path: String) throws {
         guard let connection = getConnection(serverID: serverID) else {
