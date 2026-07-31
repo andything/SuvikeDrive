@@ -80,7 +80,7 @@ struct DownloadProgressView: View {
     private var contentHeight: CGFloat {
         switch state {
         case .checking: return 200
-        case .showLog: return 380
+        case .showLog: return 500
         case .downloading: return 220
         case .downloadComplete: return 200
         case .installing: return 200
@@ -101,7 +101,7 @@ struct DownloadProgressView: View {
                 .padding(.horizontal, 24)
                 .padding(.bottom, 14)
         }
-        .frame(width: 420, height: contentHeight)
+        .frame(width: 440, height: contentHeight)
         .background(
             RoundedRectangle(cornerRadius: 12)
                 .fill(Color(NSColor.windowBackgroundColor))
@@ -148,6 +148,7 @@ struct DownloadProgressView: View {
         .frame(maxWidth: .infinity)
     }
     
+    // MARK: - 更新日志视图
     private var logView: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 6) {
@@ -168,6 +169,7 @@ struct DownloadProgressView: View {
                         .padding(.vertical, 1)
                         .background(Capsule().fill(Color.orange.opacity(0.15)))
                 }
+                Spacer()
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.bottom, 8)
@@ -185,17 +187,17 @@ struct DownloadProgressView: View {
                         .multilineTextAlignment(.leading)
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 6)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 8)
                 }
-                .frame(height: 120)
+                .frame(height: 340)  // ✅ 改大，让日志完整显示
                 .background(
                     RoundedRectangle(cornerRadius: 6)
-                        .fill(Color(NSColor.controlBackgroundColor).opacity(0.6))
+                        .fill(Color(NSColor.controlBackgroundColor).opacity(0.5))
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 6)
-                        .stroke(Color(NSColor.separatorColor).opacity(0.5), lineWidth: 0.5)
+                        .stroke(Color(NSColor.separatorColor).opacity(0.4), lineWidth: 0.5)
                 )
             } else {
                 Text("暂无更新日志")
@@ -263,7 +265,6 @@ struct DownloadProgressView: View {
         .frame(maxWidth: .infinity)
     }
     
-    // ✅ 安装视图：显示文字在中间，进度条在下方
     private var installingView: some View {
         VStack(spacing: 12) {
             Text("⏳ 正在安装更新...")
@@ -396,7 +397,6 @@ struct DownloadProgressView: View {
                 }
                 
             case .installing:
-                // ✅ 安装过程中不显示任何按钮
                 EmptyView()
                 
             case .noUpdate:
@@ -438,13 +438,38 @@ struct DownloadProgressView: View {
     }
 }
 
+// MARK: - Preview
 #Preview("显示更新日志") {
     DownloadProgressView(
         state: .showLog,
         progress: 0,
         status: "发现新版本 1.0.1",
         version: "1.0.1",
-        releaseNotes: "SuvikeDrive v1.0.1\n\n### 修复和改进\n- 修复自动更新功能\n- 改进稳定性和性能\n- 优化网络检测",
+        releaseNotes: """
+# 更新日志
+
+## v1.0.1 - 2026-08-01
+
+新增
+- 支持多账户切换
+- 新增文件搜索功能
+
+修复
+- 修复连接超时问题
+- 修复 UI 显示异常
+
+优化
+- 优化内存占用
+- 提升启动速度
+
+---
+
+## v1.0.0 - 2026-07-15
+
+新增
+- 首次发布
+- 支持 WebDAV 连接
+""",
         size: "3.2 MB",
         isMandatory: false,
         errorMessage: nil,
