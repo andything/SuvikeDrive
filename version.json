@@ -4,7 +4,7 @@
     "downloadURL": "https://github.com/andything/SuvikeDrive/releases/download/v1.0.1/SuvikeDrive_v1.0.1.dmg",
     "checksum": "dd4aacfac2e8bb2bbf8563df1a19181dc3dd0f8db569bf755e3dc2adee70b84b",
     "checksumAlgorithm": "sha256",
-    "releaseNotes": "## \n---\n# 更新日志\n\n版本：v1.0.0 | 日期：2026-08-01\n\n性能优化\n网络请求和文件 I/O 全部移至子线程执行，UI 不再卡顿\n缓存扫描、目录遍历等耗时操作全部后台化\n统一通知名称管理（Notification.Name 集中定义）\n看门狗配置集中管理（WatchdogConfig 移至 Utils.swift）\n删除废弃的传输缓存模块（.cache 文件相关代码）\n修复多个类型重复定义问题\n修复 Swift 6 并发警告\n修复服务器缓存显示为 0 的问题\n修复内存缓存条目显示错误\n修复挂载后 UI 不刷新的问题\n修复 FTP/SMB 模块中未使用的 [weak self] 警告\n",
+    "releaseNotes": "# 更新日志\n\n## v1.0.1 - 2026-08-01\n\n新增\n- 软件自动更新机制\n- update-version.sh 一键更新脚本\n- Resources/README.md 作为更新日志归档\n\n修复\n- build.sh 工作目录硬编码问题\n- update-version.sh 路径适配问题\n- 服务器缓存显示为 0 的问题\n- 内存缓存条目显示错误\n- 挂载后 UI 不刷新的问题\n- 多个类型重复定义问题\n- Swift 6 并发警告\n- FTP/SMB 模块中未使用的 [weak self] 警告\n\n优化\n- 构建流程优化，支持指定版本号打包\n- version.json 自动生成 SHA-256 校验和\n- 网络请求和文件 I/O 全部移至子线程执行，UI 不再卡顿\n- 缓存扫描、目录遍历等耗时操作全部后台化\n- 统一通知名称管理\n- 看门狗配置集中管理\n- 删除废弃的传输缓存模块\n\n---\n\n## v1.0.0 - 2026-07-15\n\n新增\n- 首次发布\n- 支持 WebDAV 连接\n- 文件上传下载功能",
     "size": 5536705,
     "minOSVersion": "14.0",
     "isMandatory": false,
