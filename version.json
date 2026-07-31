@@ -2,10 +2,10 @@
     "version": "1.0.1",
     "build": "20260801",
     "downloadURL": "https://github.com/andything/SuvikeDrive/releases/download/v1.0.1/SuvikeDrive_v1.0.1.dmg",
-    "checksum": "4ba577182f3feb4b29109af7ecce6f6852e058255836964a06502bdc6eb42fa1",
+    "checksum": "dd4aacfac2e8bb2bbf8563df1a19181dc3dd0f8db569bf755e3dc2adee70b84b",
     "checksumAlgorithm": "sha256",
     "releaseNotes": "## \n---\n# 更新日志\n\n版本：v1.0.0 | 日期：2026-08-01\n\n性能优化\n网络请求和文件 I/O 全部移至子线程执行，UI 不再卡顿\n缓存扫描、目录遍历等耗时操作全部后台化\n统一通知名称管理（Notification.Name 集中定义）\n看门狗配置集中管理（WatchdogConfig 移至 Utils.swift）\n删除废弃的传输缓存模块（.cache 文件相关代码）\n修复多个类型重复定义问题\n修复 Swift 6 并发警告\n修复服务器缓存显示为 0 的问题\n修复内存缓存条目显示错误\n修复挂载后 UI 不刷新的问题\n修复 FTP/SMB 模块中未使用的 [weak self] 警告\n",
-    "size": 5536694,
+    "size": 5536705,
     "minOSVersion": "14.0",
     "isMandatory": false,
     "releaseDate": "2026-08-01"
