@@ -2,10 +2,10 @@
     "version": "1.0.1",
     "build": "20260803",
     "downloadURL": "https://github.com/andything/SuvikeDrive/releases/download/v1.0.1/SuvikeDrive_v1.0.1.dmg",
-    "checksum": "53771186887ac27793e6a373fa7f9899d0e960bfb48141fc56dbd8af8e83751f",
+    "checksum": "c6f34691ce3166acf6a96f1ac2892a66cd29fcd803a276c17ba3ee68c711b6c6",
     "checksumAlgorithm": "sha256",
     "releaseNotes": "✨新增功能\n- 后台版本检测：启动后自动检测新版本，每小时静默轮询\n- 绿色呼吸提示：发现更新时菜单右下角绿点呼吸闪烁，悬停即开 OTA 窗口\n- 表单自动清空：保存并挂载后自动清空表单，支持连续添加多台服务器\n- 菜单栏自适应：服务器列表高度自适应，操作更流畅\n\n🎨UI/UX 升级\n- 菜单栏重构：拆分为独立组件，结构更清晰\n- 状态标签全新设计：小圆角 + 状态圆点标识，一目了然\n- 底部版本提示：绿点呼吸动画 + 文字渐亮，优雅提醒升级\n- 退出按钮优化：悬停红色高亮反馈，符合 macOS 原生习惯\n- 窗口标题精简：移除冗余标题，界面更紧凑\n\n🔧修复与优化\n- 修复删除服务器重复弹窗问题\n- 修复服务器标签圆角显示不一致\n- 优化表单清空逻辑\n- 统一菜单栏字体大小与间距\n\n📦架构调整\n- MenuBar 组件模块化拆分\n- 新增 AppUpdateChecker 后台检测服务\n- 完善 EventBus 事件通信机制\n\n",
-    "size": 5699631,
+    "size": 5699835,
     "minOSVersion": "14.0",
     "isMandatory": false,
     "releaseDate": "2026-08-03"
