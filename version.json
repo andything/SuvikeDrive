@@ -1,12 +1,12 @@
 {
     "version": "1.0.1",
-    "build": "20260801",
+    "build": "20260803",
     "downloadURL": "https://github.com/andything/SuvikeDrive/releases/download/v1.0.1/SuvikeDrive_v1.0.1.dmg",
-    "checksum": "f523582ff0076776cd0049222e39a8b2e09c5ff0bebc8209e3fa2d81e393178c",
+    "checksum": "8b31a2316d29a06d1d4a9d86a4ae0b8e48363d3286cbff8aef0963494228da4e",
     "checksumAlgorithm": "sha256",
-    "releaseNotes": "发布日期 2026-08-01\n\n修复\n- update-version.sh 路径适配问题\n- 服务器缓存显示为 0 的问题\n- 内存缓存条目显示错误\n- 挂载后 UI 不刷新的问题\n- 多个类型重复定义问题\n- FTP/SMB 模块中未使用的 [weak self] 警告\n\n优化\n- 构建流程优化，支持指定版本号打包\n- 自动生成 SHA-256 校验和\n- 网络请求和文件 I/O 全部移至子线程执行，UI 不再卡顿\n- 缓存扫描、目录遍历等耗时操作全部后台化\n- 统一通知名称管理\n- 看门狗配置集中管理\n- 删除废弃的传输缓存模块\n",
-    "size": 5618955,
+    "releaseNotes": "修复\n- update-version.sh 路径适配问题\n- 服务器缓存显示为 0 的问题\n- 内存缓存条目显示错误\n- 挂载后 UI 不刷新的问题\n- 多个类型重复定义问题\n- FTP/SMB 模块中未使用的 [weak self] 警告\n\n优化\n- 构建流程优化，支持指定版本号打包\n- 自动生成 SHA-256 校验和\n- 网络请求和文件 I/O 全部移至子线程执行，UI 不再卡顿\n- 缓存扫描、目录遍历等耗时操作全部后台化\n- 统一通知名称管理\n- 看门狗配置集中管理\n- 删除废弃的传输缓存模块\n",
+    "size": 5691084,
     "minOSVersion": "14.0",
     "isMandatory": false,
-    "releaseDate": "2026-08-01"
+    "releaseDate": "2026-08-03"
 }
